@@ -8,7 +8,7 @@ import lombok.AllArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class VendorLoginDto {
-    private String login; // can be email or mobile
+    private String login; // can be vendorOrganizationId, email, or mobile
     private String password;
 }
 
