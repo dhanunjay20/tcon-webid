@@ -25,14 +25,15 @@ public class SecurityConfig {
         return new BCryptPasswordEncoder();
     }
 
+    // Keep a "global" CORS config for non-API routes if needed
     @Bean
     public WebMvcConfigurer corsConfigurer() {
         return new WebMvcConfigurer() {
             @Override
             public void addCorsMappings(CorsRegistry registry) {
                 registry.addMapping("/**")
-                        .allowedOrigins("http://localhost:5173", "https://webidclient.tconsolutions.com" , "https://webidadmin.tconsolutions.com")
-                        .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+                        .allowedOriginPatterns("*")
+                        .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH")
                         .allowedHeaders("*")
                         .exposedHeaders("Authorization", "content-type")
                         .allowCredentials(true)
@@ -42,34 +43,15 @@ public class SecurityConfig {
     }
 
     @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http) {
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
                 .csrf(csrf -> csrf.disable())
                 .cors(cors -> {})
                 .authorizeHttpRequests(auth -> auth
-                        // Permit all auth-related endpoints (login, forgot, reset, verify OTP, etc.)
-                        .requestMatchers("/api/auth/**").permitAll()
+                                .requestMatchers("/api/**").permitAll()  // ALLOW ALL API CRUD (dev/postman mode)
 
-                        // Permit vendor/user public registration & login endpoints
-                        .requestMatchers(
-                                "/api/user/register",
-                                "/api/vendor/register",
-                                "/api/user/login",
-                                "/api/vendor/login"
-                        ).permitAll()
-
-                        // Allow preflight OPTIONS requests
-                        .requestMatchers(org.springframework.http.HttpMethod.OPTIONS, "/**").permitAll()
-
-                        // Optionally allow public GETs for user/vendor (uncomment if desired)
-                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/user/**").permitAll()
-                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/vendor/**").permitAll()
-
-                        // Allow PUT for development (change to .authenticated() later if desired)
-                        .requestMatchers(org.springframework.http.HttpMethod.PUT, "/api/user/**").permitAll()
-                        .requestMatchers(org.springframework.http.HttpMethod.PUT, "/api/vendor/**").permitAll()
-
-                        .anyRequest().authenticated()
+                        // Optionally, restrict other non-api endpoints if desired
+                        // .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
