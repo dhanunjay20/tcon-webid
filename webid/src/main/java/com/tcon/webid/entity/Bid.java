@@ -18,4 +18,9 @@ public class Bid {
     private String status; // requested, quoted, accepted, rejected
     private String submittedAt;
     private String updatedAt;
+
+    // Snapshot fields for convenience/searching
+    private String customerName;
+    private String vendorBusinessName;
+    private String eventName;
 }

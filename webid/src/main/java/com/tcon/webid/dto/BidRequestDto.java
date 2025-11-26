@@ -8,4 +8,9 @@ public class BidRequestDto {
     private String vendorOrganizationId;
     private String proposedMessage;
     private double proposedTotalPrice;
+
+    // Optional snapshot fields (convenience)
+    private String customerName;
+    private String vendorBusinessName;
+    private String eventName;
 }

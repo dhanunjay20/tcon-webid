@@ -29,6 +29,18 @@ public class BidServiceImpl implements BidService {
         Bid bid = bidRepo.findById(bidId).orElseThrow(() -> new RuntimeException("Bid not found"));
         bid.setProposedMessage(dto.getProposedMessage());
         bid.setProposedTotalPrice(dto.getProposedTotalPrice());
+
+        // Update snapshot fields if provided by DTO (do not overwrite existing values with nulls)
+        if (dto.getCustomerName() != null && !dto.getCustomerName().isBlank()) {
+            bid.setCustomerName(dto.getCustomerName());
+        }
+        if (dto.getVendorBusinessName() != null && !dto.getVendorBusinessName().isBlank()) {
+            bid.setVendorBusinessName(dto.getVendorBusinessName());
+        }
+        if (dto.getEventName() != null && !dto.getEventName().isBlank()) {
+            bid.setEventName(dto.getEventName());
+        }
+
         bid.setStatus("quoted");
         bid.setUpdatedAt(Instant.now().toString());
         Bid savedBid = bidRepo.save(bid);

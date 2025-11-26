@@ -4,8 +4,12 @@ import com.tcon.webid.dto.OrderRequestDto;
 import com.tcon.webid.dto.NotificationRequestDto;
 import com.tcon.webid.entity.Bid;
 import com.tcon.webid.entity.Order;
+import com.tcon.webid.entity.User;
+import com.tcon.webid.entity.Vendor;
 import com.tcon.webid.repository.BidRepository;
 import com.tcon.webid.repository.OrderRepository;
+import com.tcon.webid.repository.UserRepository;
+import com.tcon.webid.repository.VendorRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -24,6 +28,12 @@ public class OrderServiceImpl implements OrderService {
 
     @Autowired
     private NotificationService notificationService;
+
+    @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
+    private VendorRepository vendorRepository;
 
     @Override
     public Order createOrder(OrderRequestDto dto, List<String> vendorOrganizationIds) {
@@ -47,6 +57,13 @@ public class OrderServiceImpl implements OrderService {
         order.setUpdatedAt(order.getCreatedAt());
         order = orderRepo.save(order);
 
+        // Fetch customer name once
+        String customerName = null;
+        if (dto.getCustomerId() != null) {
+            User user = userRepository.findById(dto.getCustomerId()).orElse(null);
+            if (user != null) customerName = user.getFirstName() + (user.getLastName() != null ? " " + user.getLastName() : "");
+        }
+
         // Create a Bid entity for each vendor ("requested" status)
         if (vendorOrganizationIds != null && !vendorOrganizationIds.isEmpty()) {
             for (String vendorOrgId : vendorOrganizationIds) {
@@ -56,6 +73,13 @@ public class OrderServiceImpl implements OrderService {
                 bid.setStatus("requested");
                 bid.setSubmittedAt(Instant.now().toString());
                 bid.setUpdatedAt(bid.getSubmittedAt());
+
+                // snapshot fields
+                bid.setEventName(order.getEventName());
+                bid.setCustomerName(customerName);
+                Vendor vendor = vendorRepository.findByVendorOrganizationId(vendorOrgId).orElse(null);
+                if (vendor != null) bid.setVendorBusinessName(vendor.getBusinessName());
+
                 bidRepo.save(bid);
 
                 // Send notification to vendor
