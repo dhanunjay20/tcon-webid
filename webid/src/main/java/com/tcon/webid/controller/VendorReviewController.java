@@ -31,12 +31,18 @@ public class VendorReviewController {
         return service.getReviewsByVendor(vendorOrganizationId);
     }
 
+    @GetMapping("/latest")
+    public List<VendorReview> getLatestReviewsByVendor(
+            @PathVariable String vendorOrganizationId
+    ) {
+        return service.getLatestReviewsByVendor(vendorOrganizationId);
+    }
+
     @DeleteMapping("/{reviewId}")
     public void deleteReview(
             @PathVariable String vendorOrganizationId,
             @PathVariable String reviewId
     ) {
-        // Optional: Fetch and validate ownership before delete, as above
         service.deleteReview(reviewId);
     }
 }

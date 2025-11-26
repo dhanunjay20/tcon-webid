@@ -29,6 +29,11 @@ public interface BidService {
     Bid acceptBid(String bidId);
 
     /**
+     * Reject a specific bid (called by user)
+     */
+    Bid rejectBid(String bidId);
+
+    /**
      * Reject all other bids for an order (called by service when one bid is accepted)
      */
     void rejectOtherBids(String orderId, String acceptedBidId);

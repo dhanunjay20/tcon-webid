@@ -83,6 +83,30 @@ public class BidServiceImpl implements BidService {
     }
 
     @Override
+    public Bid rejectBid(String bidId) {
+        Bid bid = getBidById(bidId);
+
+        if (!"pending".equalsIgnoreCase(bid.getStatus()) && !"quoted".equalsIgnoreCase(bid.getStatus())) {
+            throw new IllegalStateException("Only pending or quoted bids can be rejected");
+        }
+
+        bid.setStatus("rejected");
+        bid.setUpdatedAt(Instant.now().toString());
+        Bid savedBid = bidRepo.save(bid);
+
+        // Notify vendor about rejection
+        NotificationRequestDto notification = new NotificationRequestDto();
+        notification.setRecipientVendorOrgId(bid.getVendorOrganizationId());
+        notification.setType("BID_REJECTED");
+        notification.setMessage("Your quote was not selected for this event.");
+        notification.setDataId(bid.getOrderId());
+        notification.setDataType("order");
+        notificationService.createNotification(notification);
+
+        return savedBid;
+    }
+
+    @Override
     public void rejectOtherBids(String orderId, String acceptedBidId) {
         List<Bid> bids = getBidsByOrder(orderId);
         for (Bid b : bids) {

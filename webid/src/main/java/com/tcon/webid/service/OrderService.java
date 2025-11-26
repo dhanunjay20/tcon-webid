@@ -15,7 +15,6 @@ public interface OrderService {
      * @param vendorOrganizationIds List of vendor org IDs to send requests/bids
      * @return The created Order entity
      */
-
     Order createOrder(OrderRequestDto dto, List<String> vendorOrganizationIds);
 
     Order getOrderById(String id);
@@ -23,7 +22,14 @@ public interface OrderService {
     List<Order> getOrdersByCustomer(String customerId);
 
     /**
+     * Get all orders by a list of order IDs.
+     * Used to fetch orders where vendor has bids.
+     */
+    List<Order> getOrdersByIds(List<String> orderIds);
+
+    /**
      * Get all orders assigned/confirmed to a given vendor.
+     * Now fetches orders through bids instead of direct vendorOrganizationId.
      */
     List<Order> getOrdersByVendor(String vendorOrganizationId);
 

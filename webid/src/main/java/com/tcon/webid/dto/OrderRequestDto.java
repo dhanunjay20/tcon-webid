@@ -16,9 +16,6 @@ public class OrderRequestDto {
     @Data
     public static class OrderMenuItemDto {
         private String menuItemId;
-        private String name;
-        private int quantity;
         private String specialRequest;
-        private double price;
     }
 }
