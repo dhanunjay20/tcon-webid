@@ -8,9 +8,13 @@ import com.tcon.webid.dto.ForgotUsernameDto;
 import com.tcon.webid.dto.VerifyOtpDto;
 import com.tcon.webid.dto.ResetPasswordDto;
 import com.tcon.webid.entity.User;
+import com.tcon.webid.entity.Vendor;
 import com.tcon.webid.repository.UserRepository;
+import com.tcon.webid.repository.VendorRepository;
 import com.tcon.webid.service.OtpService;
 import com.tcon.webid.service.UserService;
+import com.tcon.webid.service.VendorService;
+import com.tcon.webid.util.ContactUtils;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
@@ -18,6 +22,8 @@ import org.springframework.http.ResponseEntity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -35,7 +41,13 @@ public class AuthController {
     private UserRepository userRepository;
 
     @Autowired
+    private VendorRepository vendorRepository;
+
+    @Autowired
     private UserService userService;
+
+    @Autowired
+    private VendorService vendorService;
 
     @PostMapping("/login")
     public AuthResponseDto login(@RequestBody @Valid LoginRequestDto dto) {
@@ -48,14 +60,74 @@ public class AuthController {
         String mobile = (dto != null) ? dto.getMobile() : null;
 
         try {
-            if (email != null && !email.isBlank()) {
-                var userOpt = userRepository.findByEmail(email);
-                userOpt.ifPresent(u -> otpService.generateAndSendOtp(email));
-            } else if (mobile != null && !mobile.isBlank()) {
-                var userOpt = userRepository.findByMobile(mobile);
-                userOpt.ifPresent(u -> otpService.generateAndSendOtp(mobile));
+            // Normalize inputs using canonical utilities
+            final String normEmail = ContactUtils.normalizeEmail(email);
+            final String normMobile = ContactUtils.normalizeMobile(mobile);
+
+            boolean accountFound = false;
+
+            if (normEmail != null) {
+                // Check User by email
+                var userOpt = userRepository.findByEmail(normEmail);
+                if (userOpt.isPresent()) {
+                    otpService.generateAndSendOtp(normEmail);
+                    accountFound = true;
+                    log.info("OTP sent to User email: {}", normEmail);
+                } else {
+                    // Check Vendor by email
+                    var vendorOpt = vendorRepository.findByEmail(normEmail);
+                    if (vendorOpt.isPresent()) {
+                        otpService.generateAndSendOtp(normEmail);
+                        accountFound = true;
+                        log.info("OTP sent to Vendor email: {}", normEmail);
+                    }
+                }
+            } else if (normMobile != null) {
+                // Check User by mobile
+                var userOpt = userRepository.findByMobile(normMobile);
+                if (userOpt.isPresent()) {
+                    otpService.generateAndSendOtp(normMobile);
+                    accountFound = true;
+                    log.info("OTP sent to User mobile: {}", normMobile);
+                } else {
+                    // Try mobile search candidates for User
+                    List<String> candidates = ContactUtils.mobileSearchCandidates(normMobile);
+                    if (!candidates.isEmpty()) {
+                        var userCandidateOpt = userRepository.findByMobileIn(candidates);
+                        if (userCandidateOpt.isPresent()) {
+                            otpService.generateAndSendOtp(normMobile);
+                            accountFound = true;
+                            log.info("OTP sent to User mobile (via candidates): {}", normMobile);
+                        }
+                    }
+
+                    // Check Vendor by mobile if not found in User
+                    if (!accountFound) {
+                        var vendorOpt = vendorRepository.findByMobile(normMobile);
+                        if (vendorOpt.isPresent()) {
+                            otpService.generateAndSendOtp(normMobile);
+                            accountFound = true;
+                            log.info("OTP sent to Vendor mobile: {}", normMobile);
+                        } else {
+                            // Try mobile search candidates for Vendor
+                            if (!candidates.isEmpty()) {
+                                var vendorCandidateOpt = vendorRepository.findByMobileIn(candidates);
+                                if (vendorCandidateOpt.isPresent()) {
+                                    otpService.generateAndSendOtp(normMobile);
+                                    accountFound = true;
+                                    log.info("OTP sent to Vendor mobile (via candidates): {}", normMobile);
+                                }
+                            }
+                        }
+                    }
+                }
             }
-            // generic response
+
+            if (!accountFound) {
+                log.info("No User or Vendor found with email={}, mobile={}", normEmail, normMobile);
+            }
+
+            // Always return generic response for security
             return ResponseEntity.ok("If an account exists for the provided contact, an OTP has been sent to reset the password.");
         } catch (Exception e) {
             log.error("Error in forgotPassword for email={} mobile={}", email, mobile, e);
@@ -71,31 +143,90 @@ public class AuthController {
         try {
             log.info("Forgot username request received for email={}, mobile={}", email, mobile);
 
-            if (email != null && !email.isBlank()) {
-                var userOpt = userRepository.findByEmail(email);
-                if (userOpt.isPresent()) {
-                    log.info("User found with email: {}, sending username", email);
-                    // Send username directly to registered contact (email)
-                    authService.sendUsernameToUser(email);
-                } else {
-                    log.info("No user found with email: {}", email);
-                }
-            } else if (mobile != null && !mobile.isBlank()) {
-                var userOpt = userRepository.findByMobile(mobile);
-                if (userOpt.isPresent()) {
-                    log.info("User found with mobile: {}, sending username", mobile);
-                    // Send username directly to registered contact (WhatsApp)
-                    authService.sendUsernameToUser(mobile);
-                } else {
-                    log.info("No user found with mobile: {}", mobile);
-                }
-            } else {
+            // Validate that at least one field is provided
+            if ((email == null || email.isBlank()) && (mobile == null || mobile.isBlank())) {
                 log.warn("Forgot username request with no email or mobile");
                 return ResponseEntity.badRequest().body("Email or mobile number is required");
             }
 
-            // Always return generic response for security
-            return ResponseEntity.ok("If an account exists for the provided contact, an email or WhatsApp message has been sent with your username.");
+            // Normalize inputs to canonical forms
+            final String normEmail = ContactUtils.normalizeEmail(email);
+            final String normMobile = ContactUtils.normalizeMobile(mobile);
+
+            boolean accountFound = false;
+            List<String> candidates = null;
+
+            // Check email first
+            if (normEmail != null) {
+                // Check User by email
+                var userOpt = userRepository.findByEmail(normEmail);
+                if (userOpt.isPresent()) {
+                    log.info("User found with email: {}, sending username", normEmail);
+                    authService.sendUsernameToUser(normEmail);
+                    accountFound = true;
+                } else {
+                    // Check Vendor by email
+                    var vendorOpt = vendorRepository.findByEmail(normEmail);
+                    if (vendorOpt.isPresent()) {
+                        log.info("Vendor found with email: {}, sending username", normEmail);
+                        authService.sendUsernameToUser(normEmail);
+                        accountFound = true;
+                    } else {
+                        log.info("No User or Vendor found with email: {}", normEmail);
+                    }
+                }
+            }
+
+            // Check mobile if not found by email
+            if (!accountFound && normMobile != null) {
+                // Check User by mobile
+                var userOpt = userRepository.findByMobile(normMobile);
+                if (userOpt.isPresent()) {
+                    log.info("User found with mobile: {}, sending username", normMobile);
+                    authService.sendUsernameToUser(normMobile);
+                    accountFound = true;
+                } else {
+                    // Try mobile search candidates for User
+                    candidates = ContactUtils.mobileSearchCandidates(normMobile);
+                    log.info("Trying mobile candidates for User: {}", candidates);
+                    if (!candidates.isEmpty()) {
+                        var userCandidateOpt = userRepository.findByMobileIn(candidates);
+                        if (userCandidateOpt.isPresent()) {
+                            log.info("User found with mobile candidates: {}, sending username", normMobile);
+                            authService.sendUsernameToUser(normMobile);
+                            accountFound = true;
+                        }
+                    }
+
+                    // Check Vendor by mobile if not found in User
+                    if (!accountFound) {
+                        var vendorOpt = vendorRepository.findByMobile(normMobile);
+                        if (vendorOpt.isPresent()) {
+                            log.info("Vendor found with mobile: {}, sending username", normMobile);
+                            authService.sendUsernameToUser(normMobile);
+                            accountFound = true;
+                        } else {
+                            // Try mobile search candidates for Vendor
+                            log.info("Trying mobile candidates for Vendor: {}", candidates);
+                            if (!candidates.isEmpty()) {
+                                var vendorCandidateOpt = vendorRepository.findByMobileIn(candidates);
+                                if (vendorCandidateOpt.isPresent()) {
+                                    log.info("Vendor found with mobile candidates: {}, sending username", normMobile);
+                                    authService.sendUsernameToUser(normMobile);
+                                    accountFound = true;
+                                }
+                            }
+                        }
+                    }
+
+                    if (!accountFound) {
+                        log.info("No User or Vendor found with mobile: {} (candidates: {})", normMobile, candidates);
+                    }
+                }
+            }
+
+            // Always return generic response for security (don't reveal if user exists)
+            return ResponseEntity.ok("If an account exists for the provided contact, your username has been sent via email or WhatsApp.");
         } catch (Exception e) {
             log.error("Error in forgotUsername for email={} mobile={}", email, mobile, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Unable to process request");
@@ -107,14 +238,16 @@ public class AuthController {
         try {
             log.info("Retrieve username request for contact: {}", dto.getContact());
 
-            boolean otpValid = otpService.verifyOtp(dto.getContact(), dto.getOtp());
+            String normContact = dto.getContact() != null && dto.getContact().contains("@") ? ContactUtils.normalizeEmail(dto.getContact()) : ContactUtils.normalizeMobile(dto.getContact());
+
+            boolean otpValid = otpService.verifyOtp(normContact, dto.getOtp());
             if (!otpValid) {
                 log.warn("Invalid or expired OTP for contact: {}", dto.getContact());
                 return ResponseEntity.badRequest().body("Invalid or expired OTP");
             }
 
-            log.info("OTP verified successfully, sending username to: {}", dto.getContact());
-            authService.sendUsernameToUser(dto.getContact());
+            log.info("OTP verified successfully, sending username to: {}", normContact);
+            authService.sendUsernameToUser(normContact);
 
             return ResponseEntity.ok("Your username has been sent to your registered contact.");
         } catch (Exception e) {
@@ -125,27 +258,69 @@ public class AuthController {
 
     @PostMapping("/verify-otp")
     public ResponseEntity<String> verifyOtp(@RequestBody @Valid VerifyOtpDto dto) {
-        boolean ok = otpService.verifyOtp(dto.getContact(), dto.getOtp());
+        String normContact = dto.getContact() != null && dto.getContact().contains("@") ? ContactUtils.normalizeEmail(dto.getContact()) : ContactUtils.normalizeMobile(dto.getContact());
+        boolean ok = otpService.verifyOtp(normContact, dto.getOtp());
         if (!ok) return ResponseEntity.badRequest().body("Invalid or expired OTP");
         return ResponseEntity.ok("OTP verified");
     }
 
     @PostMapping("/reset-password")
     public ResponseEntity<String> resetPassword(@RequestBody @Valid ResetPasswordDto dto) {
-        boolean ok = otpService.verifyOtp(dto.getContact(), dto.getOtp());
+        String normContact = dto.getContact() != null && dto.getContact().contains("@") ? ContactUtils.normalizeEmail(dto.getContact()) : ContactUtils.normalizeMobile(dto.getContact());
+        boolean ok = otpService.verifyOtp(normContact, dto.getOtp());
         if (!ok) return ResponseEntity.badRequest().body("Invalid or expired OTP");
-        // find user and update password
+
+        // Find user or vendor and update password
         User user = null;
-        if (dto.getContact() != null && dto.getContact().contains("@")) {
-            user = userRepository.findByEmail(dto.getContact()).orElse(null);
-        } else if (dto.getContact() != null) {
-            user = userRepository.findByMobile(dto.getContact()).orElse(null);
+        Vendor vendor = null;
+
+        if (normContact != null && normContact.contains("@")) {
+            // Check User by email
+            user = userRepository.findByEmail(normContact).orElse(null);
+            if (user == null) {
+                // Check Vendor by email
+                vendor = vendorRepository.findByEmail(normContact).orElse(null);
+            }
+        } else if (normContact != null) {
+            // Check User by mobile
+            user = userRepository.findByMobile(normContact).orElse(null);
+            if (user == null) {
+                // Try mobile search candidates for User
+                List<String> candidates = ContactUtils.mobileSearchCandidates(normContact);
+                if (!candidates.isEmpty()) {
+                    user = userRepository.findByMobileIn(candidates).orElse(null);
+                }
+            }
+            if (user == null) {
+                // Check Vendor by mobile
+                vendor = vendorRepository.findByMobile(normContact).orElse(null);
+                if (vendor == null) {
+                    // Try mobile search candidates for Vendor
+                    List<String> candidates = ContactUtils.mobileSearchCandidates(normContact);
+                    if (!candidates.isEmpty()) {
+                        vendor = vendorRepository.findByMobileIn(candidates).orElse(null);
+                    }
+                }
+            }
         }
-        if (user == null) return ResponseEntity.badRequest().body("User not found");
-        // reuse UserService updateUser to update password
-        com.tcon.webid.dto.UserUpdateDto upd = new com.tcon.webid.dto.UserUpdateDto();
-        upd.setPassword(dto.getNewPassword());
-        userService.updateUser(user.getId(), upd);
+
+        if (user == null && vendor == null) {
+            return ResponseEntity.badRequest().body("User or Vendor not found");
+        }
+
+        // Update password for User or Vendor
+        if (user != null) {
+            com.tcon.webid.dto.UserUpdateDto upd = new com.tcon.webid.dto.UserUpdateDto();
+            upd.setPassword(dto.getNewPassword());
+            userService.updateUser(user.getId(), upd);
+            log.info("Password reset successful for User: {}", user.getEmail());
+        } else if (vendor != null) {
+            com.tcon.webid.dto.VendorUpdateDto upd = new com.tcon.webid.dto.VendorUpdateDto();
+            upd.setPassword(dto.getNewPassword());
+            vendorService.updateVendor(vendor.getId(), upd);
+            log.info("Password reset successful for Vendor: {}", vendor.getEmail());
+        }
+
         return ResponseEntity.ok("Password reset successful");
     }
 }

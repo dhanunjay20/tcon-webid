@@ -4,6 +4,7 @@ import com.tcon.webid.dto.UserRegistrationDto;
 import com.tcon.webid.dto.UserUpdateDto;
 import com.tcon.webid.entity.User;
 import com.tcon.webid.repository.UserRepository;
+import com.tcon.webid.util.ContactUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -21,15 +22,18 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public User createUser(UserRegistrationDto dto) {
-        if (userRepo.existsByEmail(dto.getEmail()))
+        String email = ContactUtils.normalizeEmail(dto.getEmail());
+        String mobile = ContactUtils.normalizeMobile(dto.getMobile());
+
+        if (userRepo.existsByEmail(email))
             throw new RuntimeException("Email already registered");
-        if (userRepo.existsByMobile(dto.getMobile()))
+        if (userRepo.existsByMobile(mobile))
             throw new RuntimeException("Mobile number already registered");
         User user = new User();
         user.setFirstName(dto.getFirstName());
         user.setLastName(dto.getLastName());
-        user.setEmail(dto.getEmail());
-        user.setMobile(dto.getMobile());
+        user.setEmail(email);
+        user.setMobile(mobile);
         user.setPasswordHash(passwordEncoder.encode(dto.getPassword()));
         user.setAddresses(dto.getAddresses());
         user.setProfileUrl(dto.getProfileUrl());
@@ -54,7 +58,7 @@ public class UserServiceImpl implements UserService {
         // Update fields if provided (allow full overwrite when present)
         if (dto.getFirstName() != null) user.setFirstName(dto.getFirstName());
         if (dto.getLastName() != null) user.setLastName(dto.getLastName());
-        if (dto.getMobile() != null) user.setMobile(dto.getMobile());
+        if (dto.getMobile() != null) user.setMobile(ContactUtils.normalizeMobile(dto.getMobile()));
 
         // Replace addresses list if provided
         if (dto.getAddresses() != null) {
@@ -85,4 +89,3 @@ public class UserServiceImpl implements UserService {
         userRepo.deleteById(id);
     }
 }
-
