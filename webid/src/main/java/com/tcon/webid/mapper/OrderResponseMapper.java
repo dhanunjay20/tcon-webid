@@ -1,5 +1,6 @@
 package com.tcon.webid.mapper;
 
+import com.tcon.webid.dto.MenuItemResponseDto;
 import com.tcon.webid.dto.OrderMenuItemResponseDto;
 import com.tcon.webid.dto.OrderResponseDto;
 import com.tcon.webid.entity.MenuItem;
@@ -56,32 +57,23 @@ public class OrderResponseMapper {
         List<OrderMenuItemResponseDto> mapped = order.getMenuItems() == null ? List.of() : order.getMenuItems().stream().map(mi -> {
             OrderMenuItemResponseDto omi = new OrderMenuItemResponseDto();
             omi.setMenuItemId(mi.getMenuItemId());
-
-            // Prefer the name provided in the order's menu item entry; fallback to MenuItem.name from DB
-            String itemName = null;
-            if (mi.getName() != null && !mi.getName().isBlank()) {
-                itemName = mi.getName().trim();
-            }
-            MenuItem menuItem = menuMap.get(mi.getMenuItemId());
-            if ((itemName == null || itemName.isBlank()) && menuItem != null && menuItem.getName() != null && !menuItem.getName().isBlank()) {
-                itemName = menuItem.getName().trim();
-            }
-            if (itemName == null || itemName.isBlank()) {
-                itemName = "Unknown Item";
-            }
-            omi.setName(itemName);
-
             omi.setSpecialRequest(mi.getSpecialRequest());
 
+            // Populate embedded MenuItemResponseDto
+            MenuItem menuItem = menuMap.get(mi.getMenuItemId());
             if (menuItem != null) {
-                omi.setVendorOrganizationId(menuItem.getVendorOrganizationId());
-                omi.setDescription(menuItem.getDescription());
-                omi.setImages(menuItem.getImages());
-                omi.setCategory(menuItem.getCategory());
-                omi.setSubCategory(menuItem.getSubCategory());
-                omi.setIngredients(menuItem.getIngredients());
-                omi.setSpiceLevels(menuItem.getSpiceLevels());
-                omi.setAvailable(menuItem.isAvailable());
+                MenuItemResponseDto mrd = new MenuItemResponseDto();
+                mrd.setId(menuItem.getId());
+                mrd.setVendorOrganizationId(menuItem.getVendorOrganizationId());
+                mrd.setName(menuItem.getName());
+                mrd.setDescription(menuItem.getDescription());
+                mrd.setImages(menuItem.getImages());
+                mrd.setCategory(menuItem.getCategory());
+                mrd.setSubCategory(menuItem.getSubCategory());
+                mrd.setIngredients(menuItem.getIngredients());
+                mrd.setSpiceLevels(menuItem.getSpiceLevels());
+                mrd.setAvailable(menuItem.isAvailable());
+                omi.setMenuItem(mrd);
             }
 
             return omi;

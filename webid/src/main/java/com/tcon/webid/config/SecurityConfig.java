@@ -32,10 +32,13 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration cors = new CorsConfiguration();
-        cors.setAllowedOrigins(List.of("*")); // Allow all for development; restrict in prod
-        cors.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
+        // Use allowedOriginPatterns instead of allowedOrigins with credentials
+        cors.setAllowedOriginPatterns(List.of("*")); // Allow all origins
+        cors.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH", "HEAD"));
         cors.setAllowedHeaders(List.of("*"));
         cors.setAllowCredentials(true);
+        cors.setExposedHeaders(List.of("Authorization", "Content-Type"));
+        cors.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", cors);
@@ -49,9 +52,7 @@ public class SecurityConfig {
                 .cors(Customizer.withDefaults()) // use global CORS configuration
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                                .requestMatchers("/api/**").permitAll() // <--- ALLOW all API CRUD
-                        // You can lock down non-API endpoints here if needed:
-                        // .anyRequest().authenticated()
+                        .anyRequest().permitAll() // Allow all requests for now
                 )
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
