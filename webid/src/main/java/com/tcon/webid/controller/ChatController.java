@@ -32,23 +32,31 @@ public class ChatController {
             log.info("Processing message from {} to {}",
                     chatMessage.getSenderId(), chatMessage.getRecipientId());
 
+            // Save message to database
             ChatMessage savedMessage = chatService.save(chatMessage);
 
+            // Update chat notification metadata (unread counts, last message, etc.)
             chatNotificationService.updateChatNotification(savedMessage);
 
-            ChatNotification notification = ChatNotification.builder()
-                    .id(savedMessage.getId())
-                    .senderId(savedMessage.getSenderId())
-                    .content(savedMessage.getContent())
-                    .build();
-
+            // Send the FULL saved message to recipient (real-time delivery)
             messagingTemplate.convertAndSendToUser(
-                    chatMessage.getRecipientId(),
+                    savedMessage.getRecipientId(),
                     "/queue/messages",
-                    notification
+                    savedMessage
             );
 
-            log.info("Message sent successfully to user: {}", chatMessage.getRecipientId());
+            // Send the FULL saved message back to sender (confirmation + real-time update)
+            messagingTemplate.convertAndSendToUser(
+                    savedMessage.getSenderId(),
+                    "/queue/messages",
+                    savedMessage
+            );
+
+            // Send chat list update notification to recipient
+            chatNotificationService.sendChatListUpdate(savedMessage.getRecipientId());
+
+            log.info("Message sent successfully - ID: {}, From: {} To: {}",
+                    savedMessage.getId(), savedMessage.getSenderId(), savedMessage.getRecipientId());
         } catch (Exception e) {
             log.error("Error processing chat message: {}", e.getMessage(), e);
         }

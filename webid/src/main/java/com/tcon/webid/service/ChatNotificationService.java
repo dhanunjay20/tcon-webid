@@ -11,6 +11,7 @@ import com.tcon.webid.repository.UserRepository;
 import com.tcon.webid.repository.VendorRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -33,6 +34,9 @@ public class ChatNotificationService {
 
     @Autowired
     private VendorRepository vendorRepository;
+
+    @Autowired
+    private SimpMessagingTemplate messagingTemplate;
 
     /**
      * Update or create chat notification metadata when a message is sent
@@ -319,6 +323,31 @@ public class ChatNotificationService {
             log.info("Refreshed participant info for {}", participantId);
         } catch (Exception e) {
             log.error("Error refreshing participant info: {}", e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Send real-time chat list update to a user via WebSocket
+     * This pushes the updated unread count and chat list to the user
+     *
+     * @param userId MongoDB ObjectId of the user to notify
+     */
+    public void sendChatListUpdate(String userId) {
+        try {
+            // Get updated unread count
+            UnreadCountDto unreadCount = getUnreadCount(userId);
+
+            // Send unread count update via WebSocket
+            messagingTemplate.convertAndSendToUser(
+                    userId,
+                    "/queue/chat-updates",
+                    unreadCount
+            );
+
+            log.info("Sent chat list update to user: {} with {} unread messages",
+                    userId, unreadCount.getTotalUnreadCount());
+        } catch (Exception e) {
+            log.error("Error sending chat list update: {}", e.getMessage(), e);
         }
     }
 }
