@@ -52,6 +52,7 @@ public class SecurityConfig {
                 .cors(Customizer.withDefaults()) // use global CORS configuration
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/ws/**").permitAll() // Allow WebSocket connections
                         .anyRequest().permitAll() // Allow all requests for now
                 )
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
