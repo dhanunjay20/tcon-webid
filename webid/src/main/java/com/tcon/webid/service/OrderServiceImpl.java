@@ -1,6 +1,8 @@
 package com.tcon.webid.service;
 
 import com.tcon.webid.dto.OrderRequestDto;
+import com.tcon.webid.dto.OrderUpdateNotification;
+import com.tcon.webid.dto.BidUpdateNotification;
 import com.tcon.webid.dto.NotificationRequestDto;
 import com.tcon.webid.entity.Bid;
 import com.tcon.webid.entity.Order;
@@ -30,6 +32,9 @@ public class OrderServiceImpl implements OrderService {
     private NotificationService notificationService;
 
     @Autowired
+    private RealTimeNotificationService realTimeNotificationService;
+
+    @Autowired
     private UserRepository userRepository;
 
     @Autowired
@@ -56,6 +61,22 @@ public class OrderServiceImpl implements OrderService {
         order.setCreatedAt(Instant.now().toString());
         order.setUpdatedAt(order.getCreatedAt());
         order = orderRepo.save(order);
+
+        // Send real-time WebSocket notification for order creation
+        OrderUpdateNotification orderCreate = OrderUpdateNotification.builder()
+                .orderId(order.getId())
+                .customerId(order.getCustomerId())
+                .eventName(order.getEventName())
+                .eventDate(order.getEventDate())
+                .eventLocation(order.getEventLocation())
+                .guestCount(order.getGuestCount())
+                .status(order.getStatus())
+                .totalPrice(order.getTotalPrice())
+                .eventType("ORDER_CREATED")
+                .message("New order created: " + order.getEventName())
+                .build();
+        realTimeNotificationService.sendOrderUpdateToUser(order.getCustomerId(), orderCreate);
+        realTimeNotificationService.broadcastOrderUpdate(orderCreate);
 
         // Fetch customer name once
         String customerName = null;
@@ -90,6 +111,22 @@ public class OrderServiceImpl implements OrderService {
                 notification.setDataId(order.getId());
                 notification.setDataType("order");
                 notificationService.createNotification(notification);
+
+                // Send real-time WebSocket notification to vendor about new bid request
+                BidUpdateNotification bidRequest = BidUpdateNotification.builder()
+                        .bidId(bid.getId())
+                        .orderId(bid.getOrderId())
+                        .vendorOrganizationId(bid.getVendorOrganizationId())
+                        .status(bid.getStatus())
+                        .eventType("BID_CREATED")
+                        .message("New bid request for " + bid.getEventName())
+                        .proposedTotalPrice(0.0)
+                        .customerName(bid.getCustomerName())
+                        .vendorBusinessName(bid.getVendorBusinessName())
+                        .eventName(bid.getEventName())
+                        .build();
+                realTimeNotificationService.sendBidUpdateToVendor(vendorOrgId, bidRequest);
+                realTimeNotificationService.broadcastBidUpdate(bidRequest);
             }
         }
 
@@ -133,9 +170,27 @@ public class OrderServiceImpl implements OrderService {
     @Override
     public Order updateOrderStatus(String id, String newStatus) {
         Order order = getOrderById(id);
+        String oldStatus = order.getStatus();
         order.setStatus(newStatus);
         order.setUpdatedAt(Instant.now().toString());
         Order updatedOrder = orderRepo.save(order);
+
+        // Send real-time WebSocket notification for order status update to customer
+        OrderUpdateNotification orderStatusUpdate = OrderUpdateNotification.builder()
+                .orderId(updatedOrder.getId())
+                .customerId(updatedOrder.getCustomerId())
+                .vendorOrganizationId(updatedOrder.getVendorOrganizationId())
+                .eventName(updatedOrder.getEventName())
+                .eventDate(updatedOrder.getEventDate())
+                .eventLocation(updatedOrder.getEventLocation())
+                .guestCount(updatedOrder.getGuestCount())
+                .status(updatedOrder.getStatus())
+                .totalPrice(updatedOrder.getTotalPrice())
+                .eventType("ORDER_STATUS_CHANGED")
+                .message("Order " + updatedOrder.getEventName() + " status changed from " + oldStatus + " to " + newStatus)
+                .build();
+        realTimeNotificationService.sendOrderUpdateToUser(updatedOrder.getCustomerId(), orderStatusUpdate);
+        realTimeNotificationService.broadcastOrderUpdate(orderStatusUpdate);
 
         // Notify all vendors who have bids for this order
         List<Bid> orderBids = bidRepo.findByOrderId(id);
@@ -147,6 +202,9 @@ public class OrderServiceImpl implements OrderService {
             notification.setDataId(order.getId());
             notification.setDataType("order");
             notificationService.createNotification(notification);
+
+            // Send real-time WebSocket notification to vendor
+            realTimeNotificationService.sendOrderUpdateToVendor(bid.getVendorOrganizationId(), orderStatusUpdate);
         }
 
         return updatedOrder;
@@ -154,6 +212,30 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     public void deleteOrder(String id) {
+        Order order = getOrderById(id);
         orderRepo.deleteById(id);
+
+        // Send real-time WebSocket notification for order deletion
+        OrderUpdateNotification orderDelete = OrderUpdateNotification.builder()
+                .orderId(order.getId())
+                .customerId(order.getCustomerId())
+                .vendorOrganizationId(order.getVendorOrganizationId())
+                .eventName(order.getEventName())
+                .eventDate(order.getEventDate())
+                .eventLocation(order.getEventLocation())
+                .guestCount(order.getGuestCount())
+                .status("deleted")
+                .totalPrice(order.getTotalPrice())
+                .eventType("ORDER_DELETED")
+                .message("Order " + order.getEventName() + " has been deleted")
+                .build();
+        realTimeNotificationService.sendOrderUpdateToUser(order.getCustomerId(), orderDelete);
+        realTimeNotificationService.broadcastOrderUpdate(orderDelete);
+
+        // Notify all vendors who have bids for this order
+        List<Bid> orderBids = bidRepo.findByOrderId(id);
+        for (Bid bid : orderBids) {
+            realTimeNotificationService.sendOrderUpdateToVendor(bid.getVendorOrganizationId(), orderDelete);
+        }
     }
 }

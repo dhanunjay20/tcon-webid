@@ -1,6 +1,7 @@
 package com.tcon.webid.service;
 
 import com.tcon.webid.dto.BidRequestDto;
+import com.tcon.webid.dto.BidUpdateNotification;
 import com.tcon.webid.dto.NotificationRequestDto;
 import com.tcon.webid.entity.Bid;
 import com.tcon.webid.entity.Order;
@@ -8,6 +9,7 @@ import com.tcon.webid.repository.BidRepository;
 import com.tcon.webid.repository.OrderRepository;
 import com.tcon.webid.service.BidService;
 import com.tcon.webid.service.NotificationService;
+import com.tcon.webid.service.RealTimeNotificationService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -23,6 +25,8 @@ public class BidServiceImpl implements BidService {
     private OrderRepository orderRepo;
     @Autowired
     private NotificationService notificationService;
+    @Autowired
+    private RealTimeNotificationService realTimeNotificationService;
 
     @Override
     public Bid submitBidQuote(String bidId, BidRequestDto dto) {
@@ -45,8 +49,13 @@ public class BidServiceImpl implements BidService {
         bid.setUpdatedAt(Instant.now().toString());
         Bid savedBid = bidRepo.save(bid);
 
-        // Notify user customer about vendor quote
+        // Update order totalPrice when bid is quoted
         Order order = orderRepo.findById(bid.getOrderId()).orElseThrow(() -> new RuntimeException("Order not found"));
+        order.setTotalPrice(bid.getProposedTotalPrice());
+        order.setUpdatedAt(Instant.now().toString());
+        orderRepo.save(order);
+
+        // Notify user customer about vendor quote
         NotificationRequestDto notification = new NotificationRequestDto();
         notification.setRecipientUserId(order.getCustomerId());
         notification.setType("BID_QUOTED");
@@ -54,6 +63,22 @@ public class BidServiceImpl implements BidService {
         notification.setDataId(order.getId());
         notification.setDataType("order");
         notificationService.createNotification(notification);
+
+        // Send real-time WebSocket notification to user
+        BidUpdateNotification bidUpdate = BidUpdateNotification.builder()
+                .bidId(savedBid.getId())
+                .orderId(savedBid.getOrderId())
+                .vendorOrganizationId(savedBid.getVendorOrganizationId())
+                .status(savedBid.getStatus())
+                .eventType("BID_QUOTED")
+                .message("A vendor has submitted a quote for your event: " + savedBid.getEventName())
+                .proposedTotalPrice(savedBid.getProposedTotalPrice())
+                .customerName(savedBid.getCustomerName())
+                .vendorBusinessName(savedBid.getVendorBusinessName())
+                .eventName(savedBid.getEventName())
+                .build();
+        realTimeNotificationService.sendBidUpdateToUser(order.getCustomerId(), bidUpdate);
+        realTimeNotificationService.broadcastBidUpdate(bidUpdate);
 
         return savedBid;
     }
@@ -88,6 +113,23 @@ public class BidServiceImpl implements BidService {
         acceptNotification.setDataType("order");
         notificationService.createNotification(acceptNotification);
 
+        // Send real-time WebSocket notification to accepted vendor
+        BidUpdateNotification acceptUpdate = BidUpdateNotification.builder()
+                .bidId(savedBid.getId())
+                .orderId(savedBid.getOrderId())
+                .vendorOrganizationId(savedBid.getVendorOrganizationId())
+                .status(savedBid.getStatus())
+                .eventType("BID_ACCEPTED")
+                .message("Your quote has been accepted for " + savedBid.getEventName())
+                .proposedTotalPrice(savedBid.getProposedTotalPrice())
+                .customerName(savedBid.getCustomerName())
+                .vendorBusinessName(savedBid.getVendorBusinessName())
+                .eventName(savedBid.getEventName())
+                .build();
+        realTimeNotificationService.sendBidUpdateToVendor(bid.getVendorOrganizationId(), acceptUpdate);
+        realTimeNotificationService.sendBidUpdateToUser(order.getCustomerId(), acceptUpdate);
+        realTimeNotificationService.broadcastBidUpdate(acceptUpdate);
+
         // Notify rejected vendors
         rejectOtherBids(bid.getOrderId(), bidId);
 
@@ -115,6 +157,22 @@ public class BidServiceImpl implements BidService {
         notification.setDataType("order");
         notificationService.createNotification(notification);
 
+        // Send real-time WebSocket notification to rejected vendor
+        BidUpdateNotification rejectUpdate = BidUpdateNotification.builder()
+                .bidId(savedBid.getId())
+                .orderId(savedBid.getOrderId())
+                .vendorOrganizationId(savedBid.getVendorOrganizationId())
+                .status(savedBid.getStatus())
+                .eventType("BID_REJECTED")
+                .message("Your quote was not selected for " + savedBid.getEventName())
+                .proposedTotalPrice(savedBid.getProposedTotalPrice())
+                .customerName(savedBid.getCustomerName())
+                .vendorBusinessName(savedBid.getVendorBusinessName())
+                .eventName(savedBid.getEventName())
+                .build();
+        realTimeNotificationService.sendBidUpdateToVendor(bid.getVendorOrganizationId(), rejectUpdate);
+        realTimeNotificationService.broadcastBidUpdate(rejectUpdate);
+
         return savedBid;
     }
 
@@ -135,10 +193,45 @@ public class BidServiceImpl implements BidService {
                 rejectNotification.setDataId(b.getOrderId());
                 rejectNotification.setDataType("order");
                 notificationService.createNotification(rejectNotification);
+
+                // Send real-time WebSocket notification to each rejected vendor
+                BidUpdateNotification rejectUpdate = BidUpdateNotification.builder()
+                        .bidId(b.getId())
+                        .orderId(b.getOrderId())
+                        .vendorOrganizationId(b.getVendorOrganizationId())
+                        .status(b.getStatus())
+                        .eventType("BID_REJECTED")
+                        .message("Your quote was not selected for " + b.getEventName())
+                        .proposedTotalPrice(b.getProposedTotalPrice())
+                        .customerName(b.getCustomerName())
+                        .vendorBusinessName(b.getVendorBusinessName())
+                        .eventName(b.getEventName())
+                        .build();
+                realTimeNotificationService.sendBidUpdateToVendor(b.getVendorOrganizationId(), rejectUpdate);
+                realTimeNotificationService.broadcastBidUpdate(rejectUpdate);
             }
         }
     }
 
     @Override
-    public void deleteBid(String id) { bidRepo.deleteById(id); }
+    public void deleteBid(String id) {
+        Bid bid = getBidById(id);
+        bidRepo.deleteById(id);
+
+        // Send real-time WebSocket notification about bid deletion
+        BidUpdateNotification deleteUpdate = BidUpdateNotification.builder()
+                .bidId(bid.getId())
+                .orderId(bid.getOrderId())
+                .vendorOrganizationId(bid.getVendorOrganizationId())
+                .status("deleted")
+                .eventType("BID_DELETED")
+                .message("Bid for " + bid.getEventName() + " has been deleted")
+                .proposedTotalPrice(bid.getProposedTotalPrice())
+                .customerName(bid.getCustomerName())
+                .vendorBusinessName(bid.getVendorBusinessName())
+                .eventName(bid.getEventName())
+                .build();
+        realTimeNotificationService.sendBidUpdateToVendor(bid.getVendorOrganizationId(), deleteUpdate);
+        realTimeNotificationService.broadcastBidUpdate(deleteUpdate);
+    }
 }
