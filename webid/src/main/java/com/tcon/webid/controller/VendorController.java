@@ -34,5 +34,9 @@ public class VendorController {
     public List<VendorResponseDto> getAllVendors() {
         return vendorService.getAllVendors();
     }
-}
 
+    @GetMapping("/org/{vendorOrganizationId}")
+    public VendorResponseDto getVendorByOrganizationId(@PathVariable String vendorOrganizationId) {
+        return vendorService.getVendorByOrganizationId(vendorOrganizationId);
+    }
+}

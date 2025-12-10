@@ -10,4 +10,5 @@ public interface VendorService {
     List<VendorResponseDto> getAllVendors();
     VendorResponseDto updateVendor(String id, VendorUpdateDto dto);
     // add delete as needed for full CRUD
+    VendorResponseDto getVendorByOrganizationId(String vendorOrganizationId);
 }

@@ -148,6 +148,13 @@ public class VendorServiceImpl implements VendorService {
         return toResponseDto(updated);
     }
 
+    @Override
+    public VendorResponseDto getVendorByOrganizationId(String organizationId) {
+        return vendorRepo.findByVendorOrganizationId(organizationId)
+                .map(this::toResponseDto)
+                .orElseThrow(() -> new RuntimeException("Vendor not found"));
+    }
+
     private VendorResponseDto toResponseDto(Vendor v) {
         return new VendorResponseDto(
                 v.getId(),

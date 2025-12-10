@@ -1,0 +1,861 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real-Time Chat - Production Ready</title>
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #e5ddd5;
+        }
+
+        .container {
+            display: flex;
+            height: 100vh;
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+        }
+
+        /* Chat List Sidebar */
+        .chat-list {
+            width: 350px;
+            border-right: 1px solid #ddd;
+            background: white;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .chat-list-header {
+            padding: 15px;
+            background: #00a884;
+            color: white;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .badge {
+            background: #ff4444;
+            color: white;
+            border-radius: 50%;
+            padding: 2px 8px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .chat-list-items {
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .chat-item {
+            padding: 15px;
+            border-bottom: 1px solid #f0f0f0;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            transition: background 0.2s;
+        }
+
+        .chat-item:hover {
+            background: #f5f5f5;
+        }
+
+        .chat-item.active {
+            background: #e9f5f2;
+        }
+
+        .chat-avatar {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: #00a884;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            font-size: 20px;
+        }
+
+        .chat-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .chat-name {
+            font-weight: 600;
+            margin-bottom: 4px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .online-dot {
+            width: 10px;
+            height: 10px;
+            background: #25d366;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        .chat-last-message {
+            font-size: 14px;
+            color: #667781;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .typing-indicator {
+            color: #00a884 !important;
+            font-style: italic;
+        }
+
+        .chat-meta {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 5px;
+        }
+
+        .chat-time {
+            font-size: 12px;
+            color: #999;
+        }
+
+        .unread-badge {
+            background: #25d366;
+            color: white;
+            border-radius: 50%;
+            min-width: 20px;
+            height: 20px;
+            padding: 0 6px;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* Chat Window */
+        .chat-window {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: #efeae2;
+        }
+
+        .chat-header {
+            padding: 15px 20px;
+            background: #f0f2f5;
+            border-bottom: 1px solid #ddd;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .chat-header-info {
+            flex: 1;
+        }
+
+        .chat-header-name {
+            font-weight: 600;
+            font-size: 16px;
+        }
+
+        .chat-header-status {
+            font-size: 13px;
+            color: #667781;
+        }
+
+        .messages-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            background-image: url('data:image/svg+xml;utf8,<svg width="100" height="100" xmlns="http://www.w3.org/2000/svg"><rect fill="%23e5ddd5" width="100" height="100"/></svg>');
+        }
+
+        .message {
+            margin-bottom: 12px;
+            display: flex;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message.sent {
+            justify-content: flex-end;
+        }
+
+        .message.received {
+            justify-content: flex-start;
+        }
+
+        .message-content {
+            max-width: 60%;
+            padding: 8px 12px;
+            border-radius: 8px;
+            position: relative;
+            word-wrap: break-word;
+        }
+
+        .message.sent .message-content {
+            background: #d9fdd3;
+            border-radius: 8px 0 8px 8px;
+        }
+
+        .message.received .message-content {
+            background: white;
+            border-radius: 0 8px 8px 8px;
+        }
+
+        .message-text {
+            margin-bottom: 4px;
+        }
+
+        .message-footer {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 4px;
+            font-size: 11px;
+            color: #667781;
+        }
+
+        .message-status {
+            display: inline-flex;
+            align-items: center;
+        }
+
+        .checkmark {
+            color: #8696a0;
+        }
+
+        .checkmark.read {
+            color: #53bdeb;
+        }
+
+        .input-container {
+            padding: 10px 20px;
+            background: #f0f2f5;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .message-input {
+            flex: 1;
+            padding: 12px 16px;
+            border: none;
+            border-radius: 24px;
+            font-size: 15px;
+            background: white;
+            outline: none;
+        }
+
+        .send-button {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: #00a884;
+            border: none;
+            color: white;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s;
+        }
+
+        .send-button:hover {
+            background: #00956f;
+        }
+
+        .send-button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .connection-status {
+            padding: 8px 15px;
+            text-align: center;
+            font-size: 13px;
+        }
+
+        .connection-status.connected {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .connection-status.disconnected {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .setup-panel {
+            padding: 20px;
+            background: #f9f9f9;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .setup-row {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .setup-row input {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+
+        .setup-row button {
+            padding: 10px 20px;
+            background: #00a884;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        .setup-row button:hover {
+            background: #00956f;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Chat List Sidebar -->
+        <div class="chat-list">
+            <div class="chat-list-header">
+                <div class="user-info">
+                    <strong id="currentUserName">Chat</strong>
+                    <span class="badge" id="totalUnreadBadge" style="display: none;">0</span>
+                </div>
+            </div>
+
+            <div class="connection-status disconnected" id="connectionStatus">
+                Not Connected
+            </div>
+
+            <div class="setup-panel">
+                <div class="setup-row">
+                    <input type="text" id="userId" placeholder="Your User ID" value="">
+                    <input type="text" id="recipientId" placeholder="Recipient ID" value="">
+                </div>
+                <div class="setup-row">
+                    <input type="text" id="serverUrl" placeholder="Server URL" value="http://localhost:8080">
+                    <button onclick="connect()">Connect</button>
+                    <button onclick="disconnect()">Disconnect</button>
+                </div>
+            </div>
+
+            <div class="chat-list-items" id="chatList">
+                <!-- Chat items will be populated here -->
+            </div>
+        </div>
+
+        <!-- Chat Window -->
+        <div class="chat-window">
+            <div class="chat-header">
+                <div class="chat-avatar" id="chatAvatar">?</div>
+                <div class="chat-header-info">
+                    <div class="chat-header-name" id="chatName">Select a chat</div>
+                    <div class="chat-header-status" id="chatStatus">...</div>
+                </div>
+            </div>
+
+            <div class="messages-container" id="messagesContainer">
+                <div style="text-align: center; color: #667781; padding: 40px;">
+                    Connect and select a chat to start messaging
+                </div>
+            </div>
+
+            <div class="input-container">
+                <input type="text" class="message-input" id="messageInput"
+                       placeholder="Type a message"
+                       onkeypress="handleKeyPress(event)"
+                       onkeyup="handleTyping()"
+                       disabled>
+                <button class="send-button" id="sendBtn" onclick="sendMessage()" disabled>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let stompClient = null;
+        let currentUserId = null;
+        let currentRecipientId = null;
+        let typingTimeout = null;
+        let isTyping = false;
+        let chatMessages = {};
+
+        function log(message, type = 'info') {
+            console.log(`[${type.toUpperCase()}] ${message}`);
+        }
+
+        function updateConnectionStatus(status) {
+            const statusElement = document.getElementById('connectionStatus');
+            if (status === 'connected') {
+                statusElement.textContent = '● Connected';
+                statusElement.className = 'connection-status connected';
+            } else {
+                statusElement.textContent = '● Disconnected';
+                statusElement.className = 'connection-status disconnected';
+            }
+        }
+
+        function connect() {
+            currentUserId = document.getElementById('userId').value.trim();
+            const recipientId = document.getElementById('recipientId').value.trim();
+            const serverUrl = document.getElementById('serverUrl').value.trim();
+
+            if (!currentUserId) {
+                alert('Please enter your User ID');
+                return;
+            }
+
+            log('Connecting to WebSocket server...');
+
+            const socket = new SockJS(`${serverUrl}/ws`);
+            stompClient = Stomp.over(socket);
+
+            // Disable console debug
+            stompClient.debug = () => {};
+
+            stompClient.connect({}, function(frame) {
+                log('Connected successfully!', 'success');
+                updateConnectionStatus('connected');
+
+                // Enable input
+                document.getElementById('messageInput').disabled = false;
+                document.getElementById('sendBtn').disabled = false;
+
+                // Subscribe to personal message queue
+                stompClient.subscribe(`/user/${currentUserId}/queue/messages`, function(message) {
+                    const chatMessage = JSON.parse(message.body);
+                    log(`Received message: ${chatMessage.content}`, 'message');
+                    handleIncomingMessage(chatMessage);
+                });
+
+                // Subscribe to typing indicators
+                stompClient.subscribe(`/user/${currentUserId}/queue/typing`, function(message) {
+                    const status = JSON.parse(message.body);
+                    handleTypingIndicator(status);
+                });
+
+                // Subscribe to read receipts
+                stompClient.subscribe(`/user/${currentUserId}/queue/read`, function(message) {
+                    const receipt = JSON.parse(message.body);
+                    log(`Messages read by ${receipt.id}`, 'read');
+                    markMessagesAsRead(receipt.senderId);
+                });
+
+                // Subscribe to chat list updates (unread counts)
+                stompClient.subscribe(`/user/${currentUserId}/queue/chat-updates`, function(message) {
+                    const unreadData = JSON.parse(message.body);
+                    updateUnreadBadge(unreadData);
+                });
+
+                // Subscribe to status updates
+                stompClient.subscribe('/topic/status', function(message) {
+                    const status = JSON.parse(message.body);
+                    if (status.userId === currentRecipientId) {
+                        updateOnlineStatus(status.status);
+                    }
+                });
+
+                // Send online status
+                stompClient.send("/app/status", {}, JSON.stringify({
+                    userId: currentUserId,
+                    status: "ONLINE"
+                }));
+
+                // Load chat list
+                loadChatList();
+
+                // If recipient specified, load that chat
+                if (recipientId) {
+                    currentRecipientId = recipientId;
+                    loadChatHistory(currentUserId, recipientId);
+                }
+            }, function(error) {
+                log('Connection error: ' + error, 'error');
+                updateConnectionStatus('disconnected');
+            });
+        }
+
+        function disconnect() {
+            if (stompClient !== null) {
+                // Send offline status
+                stompClient.send("/app/status", {}, JSON.stringify({
+                    userId: currentUserId,
+                    status: "OFFLINE"
+                }));
+
+                stompClient.disconnect();
+                log('Disconnected', 'info');
+                updateConnectionStatus('disconnected');
+
+                // Disable input
+                document.getElementById('messageInput').disabled = true;
+                document.getElementById('sendBtn').disabled = true;
+            }
+        }
+
+        function sendMessage() {
+            const messageInput = document.getElementById('messageInput');
+            const content = messageInput.value.trim();
+
+            if (!content || !currentRecipientId) return;
+
+            if (stompClient && stompClient.connected) {
+                const chatMessage = {
+                    senderId: currentUserId,
+                    recipientId: currentRecipientId,
+                    content: content
+                };
+
+                stompClient.send("/app/chat", {}, JSON.stringify(chatMessage));
+
+                messageInput.value = '';
+                log('Message sent', 'send');
+
+                // Stop typing indicator
+                if (isTyping) {
+                    sendTypingStatus(false);
+                }
+            } else {
+                alert('Not connected to server');
+            }
+        }
+
+        function handleIncomingMessage(chatMessage) {
+            // Store message
+            const chatId = generateChatId(chatMessage.senderId, chatMessage.recipientId);
+            if (!chatMessages[chatId]) {
+                chatMessages[chatId] = [];
+            }
+            chatMessages[chatId].push(chatMessage);
+
+            // Update UI if this is the active chat
+            if (chatMessage.senderId === currentRecipientId || chatMessage.recipientId === currentRecipientId) {
+                displayMessage(chatMessage);
+
+                // Send read receipt if this is from the other person
+                if (chatMessage.senderId === currentRecipientId) {
+                    sendReadReceipt(chatMessage.senderId);
+                }
+            }
+
+            // Update chat list
+            loadChatList();
+        }
+
+        function displayMessage(message) {
+            const container = document.getElementById('messagesContainer');
+            const isSent = message.senderId === currentUserId;
+
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${isSent ? 'sent' : 'received'}`;
+            messageDiv.dataset.messageId = message.id;
+
+            const time = new Date(message.timestamp).toLocaleTimeString('en-US', {
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+
+            let statusIcon = '';
+            if (isSent) {
+                const readClass = message.status === 'READ' ? 'read' : '';
+                const checkmarks = message.status === 'READ' ? '✓✓' : '✓';
+                statusIcon = `<span class="checkmark ${readClass}">${checkmarks}</span>`;
+            }
+
+            messageDiv.innerHTML = `
+                <div class="message-content">
+                    <div class="message-text">${escapeHtml(message.content)}</div>
+                    <div class="message-footer">
+                        <span>${time}</span>
+                        ${statusIcon}
+                    </div>
+                </div>
+            `;
+
+            container.appendChild(messageDiv);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function handleTyping() {
+            if (!stompClient || !stompClient.connected || !currentRecipientId) return;
+
+            if (!isTyping) {
+                isTyping = true;
+                sendTypingStatus(true);
+            }
+
+            clearTimeout(typingTimeout);
+            typingTimeout = setTimeout(() => {
+                isTyping = false;
+                sendTypingStatus(false);
+            }, 3000);
+        }
+
+        function sendTypingStatus(typing) {
+            if (stompClient && stompClient.connected && currentRecipientId) {
+                stompClient.send("/app/typing", {}, JSON.stringify({
+                    senderId: currentUserId,
+                    recipientId: currentRecipientId,
+                    isTyping: typing
+                }));
+            }
+        }
+
+        function handleTypingIndicator(status) {
+            const statusElement = document.getElementById('chatStatus');
+            if (status.isTyping) {
+                statusElement.textContent = 'typing...';
+                statusElement.style.color = '#00a884';
+            } else {
+                statusElement.textContent = 'online';
+                statusElement.style.color = '#667781';
+            }
+        }
+
+        function sendReadReceipt(senderId) {
+            if (stompClient && stompClient.connected) {
+                stompClient.send("/app/read", {}, JSON.stringify({
+                    senderId: senderId,
+                    id: currentUserId
+                }));
+            }
+        }
+
+        function markMessagesAsRead(readerId) {
+            // Update UI to show double checkmark
+            const sentMessages = document.querySelectorAll('.message.sent .checkmark');
+            sentMessages.forEach(status => {
+                status.textContent = '✓✓';
+                status.classList.add('read');
+            });
+        }
+
+        function updateOnlineStatus(status) {
+            const statusElement = document.getElementById('chatStatus');
+            if (status === 'ONLINE') {
+                statusElement.textContent = 'online';
+                statusElement.style.color = '#00a884';
+            } else {
+                statusElement.textContent = 'offline';
+                statusElement.style.color = '#999';
+            }
+        }
+
+        async function loadChatList() {
+            if (!currentUserId) return;
+
+            try {
+                const serverUrl = document.getElementById('serverUrl').value.trim();
+                const response = await fetch(`${serverUrl}/api/chat-notifications/${currentUserId}/chats`);
+                const chats = await response.json();
+
+                const chatListContainer = document.getElementById('chatList');
+                chatListContainer.innerHTML = '';
+
+                chats.forEach(chat => {
+                    const chatItem = createChatListItem(chat);
+                    chatListContainer.appendChild(chatItem);
+                });
+
+                // Load unread count
+                const unreadResponse = await fetch(`${serverUrl}/api/chat-notifications/${currentUserId}/unread-count`);
+                const unreadData = await unreadResponse.json();
+                updateUnreadBadge(unreadData);
+            } catch (error) {
+                log('Error loading chat list: ' + error, 'error');
+            }
+        }
+
+        function createChatListItem(chat) {
+            const div = document.createElement('div');
+            div.className = 'chat-item';
+            if (chat.participantId === currentRecipientId) {
+                div.classList.add('active');
+            }
+
+            const initials = chat.participantName.split(' ').map(n => n[0]).join('').toUpperCase();
+            const onlineDot = chat.onlineStatus === 'ONLINE' ? '<span class="online-dot"></span>' : '';
+            const unreadBadge = chat.unreadCount > 0 ?
+                `<span class="unread-badge">${chat.unreadCount}</span>` : '';
+            const lastMessage = chat.isTyping ?
+                '<span class="typing-indicator">typing...</span>' :
+                escapeHtml(chat.lastMessage || '');
+
+            div.innerHTML = `
+                <div class="chat-avatar">${initials}</div>
+                <div class="chat-info">
+                    <div class="chat-name">
+                        ${escapeHtml(chat.participantName)}
+                        ${onlineDot}
+                    </div>
+                    <div class="chat-last-message">${lastMessage}</div>
+                </div>
+                <div class="chat-meta">
+                    <span class="chat-time">${formatTime(chat.lastMessageTimestamp)}</span>
+                    ${unreadBadge}
+                </div>
+            `;
+
+            div.onclick = () => selectChat(chat);
+            return div;
+        }
+
+        function selectChat(chat) {
+            currentRecipientId = chat.participantId;
+            document.getElementById('recipientId').value = chat.participantId;
+            document.getElementById('chatName').textContent = chat.participantName;
+            document.getElementById('chatAvatar').textContent =
+                chat.participantName.split(' ').map(n => n[0]).join('').toUpperCase();
+
+            // Mark chat as read
+            markChatAsRead(chat.participantId);
+
+            // Load chat history
+            loadChatHistory(currentUserId, chat.participantId);
+
+            // Update active state
+            document.querySelectorAll('.chat-item').forEach(item => item.classList.remove('active'));
+            event.currentTarget.classList.add('active');
+        }
+
+        async function loadChatHistory(senderId, recipientId) {
+            try {
+                const serverUrl = document.getElementById('serverUrl').value.trim();
+                const response = await fetch(`${serverUrl}/api/messages/${senderId}/${recipientId}`);
+                const messages = await response.json();
+
+                const container = document.getElementById('messagesContainer');
+                container.innerHTML = '';
+
+                const chatId = generateChatId(senderId, recipientId);
+                chatMessages[chatId] = messages;
+
+                messages.forEach(msg => {
+                    displayMessage(msg);
+                });
+
+                // Send read receipt
+                if (messages.length > 0) {
+                    sendReadReceipt(recipientId);
+                }
+            } catch (error) {
+                log('Error loading chat history: ' + error, 'error');
+            }
+        }
+
+        async function markChatAsRead(participantId) {
+            try {
+                const serverUrl = document.getElementById('serverUrl').value.trim();
+                await fetch(`${serverUrl}/api/chat-notifications/${currentUserId}/mark-read/${participantId}`, {
+                    method: 'PUT'
+                });
+                loadChatList();
+            } catch (error) {
+                log('Error marking chat as read: ' + error, 'error');
+            }
+        }
+
+        function updateUnreadBadge(unreadData) {
+            const badge = document.getElementById('totalUnreadBadge');
+            if (unreadData.totalUnreadCount > 0) {
+                badge.textContent = unreadData.totalUnreadCount;
+                badge.style.display = 'inline-block';
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+
+        function generateChatId(id1, id2) {
+            return [id1, id2].sort().join('_');
+        }
+
+        function formatTime(timestamp) {
+            if (!timestamp) return '';
+            const date = new Date(timestamp);
+            const now = new Date();
+            const diff = now - date;
+
+            if (diff < 86400000) { // Less than 24 hours
+                return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+            } else if (diff < 604800000) { // Less than 7 days
+                return date.toLocaleDateString('en-US', { weekday: 'short' });
+            } else {
+                return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function handleKeyPress(event) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                sendMessage();
+            }
+        }
+
+        // Disconnect on page unload
+        window.addEventListener('beforeunload', () => {
+            if (stompClient && stompClient.connected) {
+                stompClient.send("/app/status", {}, JSON.stringify({
+                    userId: currentUserId,
+                    status: "OFFLINE"
+                }));
+            }
+        });
+
+        // Auto-refresh chat list every 30 seconds as fallback
+        setInterval(() => {
+            if (stompClient && stompClient.connected) {
+                loadChatList();
+            }
+        }, 30000);
+    </script>
+</body>
+</html>
+

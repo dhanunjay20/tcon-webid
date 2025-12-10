@@ -34,4 +34,9 @@ public class VendorReviewServiceImpl implements VendorReviewService {
     public void deleteReview(String id) {
         repo.deleteById(id);
     }
+
+    @Override
+    public List<VendorReview> getLatestReviewsByVendor(String vendorOrganizationId) {
+        return repo.findTop10ByVendorOrganizationIdOrderByReviewDateDesc(vendorOrganizationId);
+    }
 }
