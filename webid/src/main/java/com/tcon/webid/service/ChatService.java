@@ -1,5 +1,6 @@
 package com.tcon.webid.service;
 
+import com.tcon.webid.dto.ChatUpdateNotification;
 import com.tcon.webid.entity.ChatMessage;
 import com.tcon.webid.entity.ChatMessage.MessageStatus;
 import com.tcon.webid.repository.ChatMessageRepository;
@@ -21,6 +22,9 @@ public class ChatService {
     @Autowired
     private ChatMessageRepository chatMessageRepository;
 
+    @Autowired
+    private RealTimeNotificationService realTimeNotificationService;
+
     /**
      * Save a chat message with initial status SENT
      *
@@ -41,6 +45,22 @@ public class ChatService {
             ChatMessage savedMessage = chatMessageRepository.save(chatMessage);
             log.info("Saved chat message with id: {} from: {} to: {}",
                     savedMessage.getId(), savedMessage.getSenderId(), savedMessage.getRecipientId());
+
+            // Send real-time notification for new message
+            ChatUpdateNotification chatUpdate = ChatUpdateNotification.builder()
+                    .messageId(savedMessage.getId())
+                    .chatId(savedMessage.getChatId())
+                    .senderId(savedMessage.getSenderId())
+                    .recipientId(savedMessage.getRecipientId())
+                    .content(savedMessage.getContent())
+                    .eventType("MESSAGE_SENT")
+                    .messageStatus(savedMessage.getStatus().toString())
+                    .build();
+
+            // Send to recipient (both user and vendor could be either sender or recipient)
+            realTimeNotificationService.sendChatUpdateToUser(savedMessage.getRecipientId(), chatUpdate);
+            realTimeNotificationService.sendChatUpdateToVendor(savedMessage.getRecipientId(), chatUpdate);
+            realTimeNotificationService.broadcastChatUpdate(chatUpdate);
 
             return savedMessage;
         } catch (Exception e) {
@@ -108,6 +128,20 @@ public class ChatService {
             for (ChatMessage message : unreadMessages) {
                 message.setStatus(MessageStatus.READ);
                 chatMessageRepository.save(message);
+
+                // Send real-time notification for message read
+                ChatUpdateNotification chatUpdate = ChatUpdateNotification.builder()
+                        .messageId(message.getId())
+                        .chatId(message.getChatId())
+                        .senderId(message.getSenderId())
+                        .recipientId(message.getRecipientId())
+                        .eventType("MESSAGE_READ")
+                        .messageStatus(MessageStatus.READ.toString())
+                        .build();
+
+                // Notify the original sender that their message was read
+                realTimeNotificationService.sendChatUpdateToUser(message.getSenderId(), chatUpdate);
+                realTimeNotificationService.sendChatUpdateToVendor(message.getSenderId(), chatUpdate);
             }
 
             log.info("Marked {} messages as READ from {} to {}",
@@ -135,6 +169,20 @@ public class ChatService {
             for (ChatMessage message : sentMessages) {
                 message.setStatus(MessageStatus.DELIVERED);
                 chatMessageRepository.save(message);
+
+                // Send real-time notification for message delivered
+                ChatUpdateNotification chatUpdate = ChatUpdateNotification.builder()
+                        .messageId(message.getId())
+                        .chatId(message.getChatId())
+                        .senderId(message.getSenderId())
+                        .recipientId(message.getRecipientId())
+                        .eventType("MESSAGE_DELIVERED")
+                        .messageStatus(MessageStatus.DELIVERED.toString())
+                        .build();
+
+                // Notify the original sender that their message was delivered
+                realTimeNotificationService.sendChatUpdateToUser(message.getSenderId(), chatUpdate);
+                realTimeNotificationService.sendChatUpdateToVendor(message.getSenderId(), chatUpdate);
             }
 
             log.info("Marked {} messages as DELIVERED from {} to {}",

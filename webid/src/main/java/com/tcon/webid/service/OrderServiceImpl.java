@@ -112,10 +112,14 @@ public class OrderServiceImpl implements OrderService {
                 notification.setDataType("order");
                 notificationService.createNotification(notification);
 
+                // Get vendor MongoDB ID
+                String vendorId = vendor != null ? vendor.getId() : null;
+
                 // Send real-time WebSocket notification to vendor about new bid request
                 BidUpdateNotification bidRequest = BidUpdateNotification.builder()
                         .bidId(bid.getId())
                         .orderId(bid.getOrderId())
+                        .vendorId(vendorId)
                         .vendorOrganizationId(bid.getVendorOrganizationId())
                         .status(bid.getStatus())
                         .eventType("BID_CREATED")
@@ -125,7 +129,10 @@ public class OrderServiceImpl implements OrderService {
                         .vendorBusinessName(bid.getVendorBusinessName())
                         .eventName(bid.getEventName())
                         .build();
-                realTimeNotificationService.sendBidUpdateToVendor(vendorOrgId, bidRequest);
+
+                if (vendorId != null) {
+                    realTimeNotificationService.sendBidUpdateToVendor(vendorId, bidRequest);
+                }
                 realTimeNotificationService.broadcastBidUpdate(bidRequest);
             }
         }
@@ -175,10 +182,14 @@ public class OrderServiceImpl implements OrderService {
         order.setUpdatedAt(Instant.now().toString());
         Order updatedOrder = orderRepo.save(order);
 
+        // Get vendor MongoDB ID if available
+        String vendorId = getVendorIdFromOrgId(updatedOrder.getVendorOrganizationId());
+
         // Send real-time WebSocket notification for order status update to customer
         OrderUpdateNotification orderStatusUpdate = OrderUpdateNotification.builder()
                 .orderId(updatedOrder.getId())
                 .customerId(updatedOrder.getCustomerId())
+                .vendorId(vendorId)
                 .vendorOrganizationId(updatedOrder.getVendorOrganizationId())
                 .eventName(updatedOrder.getEventName())
                 .eventDate(updatedOrder.getEventDate())
@@ -203,8 +214,13 @@ public class OrderServiceImpl implements OrderService {
             notification.setDataType("order");
             notificationService.createNotification(notification);
 
+            // Get vendor MongoDB ID for this bid
+            String bidVendorId = getVendorIdFromOrgId(bid.getVendorOrganizationId());
+
             // Send real-time WebSocket notification to vendor
-            realTimeNotificationService.sendOrderUpdateToVendor(bid.getVendorOrganizationId(), orderStatusUpdate);
+            if (bidVendorId != null) {
+                realTimeNotificationService.sendOrderUpdateToVendor(bidVendorId, orderStatusUpdate);
+            }
         }
 
         return updatedOrder;
@@ -215,10 +231,14 @@ public class OrderServiceImpl implements OrderService {
         Order order = getOrderById(id);
         orderRepo.deleteById(id);
 
+        // Get vendor MongoDB ID if available
+        String vendorId = getVendorIdFromOrgId(order.getVendorOrganizationId());
+
         // Send real-time WebSocket notification for order deletion
         OrderUpdateNotification orderDelete = OrderUpdateNotification.builder()
                 .orderId(order.getId())
                 .customerId(order.getCustomerId())
+                .vendorId(vendorId)
                 .vendorOrganizationId(order.getVendorOrganizationId())
                 .eventName(order.getEventName())
                 .eventDate(order.getEventDate())
@@ -235,7 +255,22 @@ public class OrderServiceImpl implements OrderService {
         // Notify all vendors who have bids for this order
         List<Bid> orderBids = bidRepo.findByOrderId(id);
         for (Bid bid : orderBids) {
-            realTimeNotificationService.sendOrderUpdateToVendor(bid.getVendorOrganizationId(), orderDelete);
+            String bidVendorId = getVendorIdFromOrgId(bid.getVendorOrganizationId());
+            if (bidVendorId != null) {
+                realTimeNotificationService.sendOrderUpdateToVendor(bidVendorId, orderDelete);
+            }
         }
+    }
+
+    /**
+     * Helper method to get vendor MongoDB _id from vendorOrganizationId
+     */
+    private String getVendorIdFromOrgId(String vendorOrganizationId) {
+        if (vendorOrganizationId == null) {
+            return null;
+        }
+        return vendorRepository.findByVendorOrganizationId(vendorOrganizationId)
+                .map(Vendor::getId)
+                .orElse(null);
     }
 }

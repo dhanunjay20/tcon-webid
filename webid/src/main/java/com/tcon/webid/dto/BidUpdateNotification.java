@@ -17,7 +17,8 @@ import java.time.Instant;
 public class BidUpdateNotification {
     private String bidId;
     private String orderId;
-    private String vendorOrganizationId;
+    private String vendorId; // MongoDB _id of the vendor
+    private String vendorOrganizationId; // Business organization ID (kept for backward compatibility)
     private String status; // requested, quoted, accepted, rejected
     private String eventType; // BID_CREATED, BID_UPDATED, BID_DELETED, BID_QUOTED, BID_ACCEPTED, BID_REJECTED
     private String message;

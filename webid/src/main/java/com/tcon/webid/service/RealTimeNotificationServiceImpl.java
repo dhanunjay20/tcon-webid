@@ -1,6 +1,7 @@
 package com.tcon.webid.service;
 
 import com.tcon.webid.dto.BidUpdateNotification;
+import com.tcon.webid.dto.ChatUpdateNotification;
 import com.tcon.webid.dto.OrderUpdateNotification;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -38,13 +39,13 @@ public class RealTimeNotificationServiceImpl implements RealTimeNotificationServ
     }
 
     @Override
-    public void sendBidUpdateToVendor(String vendorOrganizationId, BidUpdateNotification notification) {
+    public void sendBidUpdateToVendor(String vendorId, BidUpdateNotification notification) {
         try {
-            log.info("Sending bid update to vendor {}: {} for bid {}", vendorOrganizationId, notification.getEventType(), notification.getBidId());
-            // Send to vendor-specific queue using vendor organization ID
-            messagingTemplate.convertAndSend("/topic/vendor/" + vendorOrganizationId + "/bids", notification);
+            log.info("Sending bid update to vendor {}: {} for bid {}", vendorId, notification.getEventType(), notification.getBidId());
+            // Send to vendor-specific queue using MongoDB _id
+            messagingTemplate.convertAndSend("/topic/vendor/" + vendorId + "/bids", notification);
         } catch (Exception e) {
-            log.error("Failed to send bid update to vendor {}", vendorOrganizationId, e);
+            log.error("Failed to send bid update to vendor {}", vendorId, e);
         }
     }
 
@@ -69,13 +70,44 @@ public class RealTimeNotificationServiceImpl implements RealTimeNotificationServ
     }
 
     @Override
-    public void sendOrderUpdateToVendor(String vendorOrganizationId, OrderUpdateNotification notification) {
+    public void sendOrderUpdateToVendor(String vendorId, OrderUpdateNotification notification) {
         try {
-            log.info("Sending order update to vendor {}: {} for order {}", vendorOrganizationId, notification.getEventType(), notification.getOrderId());
-            // Send to vendor-specific queue using vendor organization ID
-            messagingTemplate.convertAndSend("/topic/vendor/" + vendorOrganizationId + "/orders", notification);
+            log.info("Sending order update to vendor {}: {} for order {}", vendorId, notification.getEventType(), notification.getOrderId());
+            // Send to vendor-specific queue using MongoDB _id
+            messagingTemplate.convertAndSend("/topic/vendor/" + vendorId + "/orders", notification);
         } catch (Exception e) {
-            log.error("Failed to send order update to vendor {}", vendorOrganizationId, e);
+            log.error("Failed to send order update to vendor {}", vendorId, e);
+        }
+    }
+
+    @Override
+    public void broadcastChatUpdate(ChatUpdateNotification notification) {
+        try {
+            log.info("Broadcasting chat update: {} for message {}", notification.getEventType(), notification.getMessageId());
+            messagingTemplate.convertAndSend("/topic/chats", notification);
+        } catch (Exception e) {
+            log.error("Failed to broadcast chat update", e);
+        }
+    }
+
+    @Override
+    public void sendChatUpdateToUser(String userId, ChatUpdateNotification notification) {
+        try {
+            log.info("Sending chat update to user {}: {} for message {}", userId, notification.getEventType(), notification.getMessageId());
+            messagingTemplate.convertAndSendToUser(userId, "/queue/chats", notification);
+        } catch (Exception e) {
+            log.error("Failed to send chat update to user {}", userId, e);
+        }
+    }
+
+    @Override
+    public void sendChatUpdateToVendor(String vendorId, ChatUpdateNotification notification) {
+        try {
+            log.info("Sending chat update to vendor {}: {} for message {}", vendorId, notification.getEventType(), notification.getMessageId());
+            // Send to vendor-specific queue using MongoDB _id
+            messagingTemplate.convertAndSend("/topic/vendor/" + vendorId + "/chats", notification);
+        } catch (Exception e) {
+            log.error("Failed to send chat update to vendor {}", vendorId, e);
         }
     }
 }

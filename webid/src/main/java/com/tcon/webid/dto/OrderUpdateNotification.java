@@ -17,7 +17,8 @@ import java.time.Instant;
 public class OrderUpdateNotification {
     private String orderId;
     private String customerId;
-    private String vendorOrganizationId;
+    private String vendorId; // MongoDB _id of the vendor
+    private String vendorOrganizationId; // Business organization ID (kept for backward compatibility)
     private String eventName;
     private String eventDate;
     private String eventLocation;

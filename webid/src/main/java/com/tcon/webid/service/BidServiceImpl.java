@@ -5,8 +5,10 @@ import com.tcon.webid.dto.BidUpdateNotification;
 import com.tcon.webid.dto.NotificationRequestDto;
 import com.tcon.webid.entity.Bid;
 import com.tcon.webid.entity.Order;
+import com.tcon.webid.entity.Vendor;
 import com.tcon.webid.repository.BidRepository;
 import com.tcon.webid.repository.OrderRepository;
+import com.tcon.webid.repository.VendorRepository;
 import com.tcon.webid.service.BidService;
 import com.tcon.webid.service.NotificationService;
 import com.tcon.webid.service.RealTimeNotificationService;
@@ -23,6 +25,8 @@ public class BidServiceImpl implements BidService {
     private BidRepository bidRepo;
     @Autowired
     private OrderRepository orderRepo;
+    @Autowired
+    private VendorRepository vendorRepo;
     @Autowired
     private NotificationService notificationService;
     @Autowired
@@ -113,10 +117,14 @@ public class BidServiceImpl implements BidService {
         acceptNotification.setDataType("order");
         notificationService.createNotification(acceptNotification);
 
+        // Get vendor MongoDB ID
+        String vendorId = getVendorIdFromOrgId(savedBid.getVendorOrganizationId());
+
         // Send real-time WebSocket notification to accepted vendor
         BidUpdateNotification acceptUpdate = BidUpdateNotification.builder()
                 .bidId(savedBid.getId())
                 .orderId(savedBid.getOrderId())
+                .vendorId(vendorId)
                 .vendorOrganizationId(savedBid.getVendorOrganizationId())
                 .status(savedBid.getStatus())
                 .eventType("BID_ACCEPTED")
@@ -126,7 +134,10 @@ public class BidServiceImpl implements BidService {
                 .vendorBusinessName(savedBid.getVendorBusinessName())
                 .eventName(savedBid.getEventName())
                 .build();
-        realTimeNotificationService.sendBidUpdateToVendor(bid.getVendorOrganizationId(), acceptUpdate);
+
+        if (vendorId != null) {
+            realTimeNotificationService.sendBidUpdateToVendor(vendorId, acceptUpdate);
+        }
         realTimeNotificationService.sendBidUpdateToUser(order.getCustomerId(), acceptUpdate);
         realTimeNotificationService.broadcastBidUpdate(acceptUpdate);
 
@@ -194,10 +205,14 @@ public class BidServiceImpl implements BidService {
                 rejectNotification.setDataType("order");
                 notificationService.createNotification(rejectNotification);
 
+                // Get vendor MongoDB ID
+                String vendorId = getVendorIdFromOrgId(b.getVendorOrganizationId());
+
                 // Send real-time WebSocket notification to each rejected vendor
                 BidUpdateNotification rejectUpdate = BidUpdateNotification.builder()
                         .bidId(b.getId())
                         .orderId(b.getOrderId())
+                        .vendorId(vendorId)
                         .vendorOrganizationId(b.getVendorOrganizationId())
                         .status(b.getStatus())
                         .eventType("BID_REJECTED")
@@ -207,7 +222,10 @@ public class BidServiceImpl implements BidService {
                         .vendorBusinessName(b.getVendorBusinessName())
                         .eventName(b.getEventName())
                         .build();
-                realTimeNotificationService.sendBidUpdateToVendor(b.getVendorOrganizationId(), rejectUpdate);
+
+                if (vendorId != null) {
+                    realTimeNotificationService.sendBidUpdateToVendor(vendorId, rejectUpdate);
+                }
                 realTimeNotificationService.broadcastBidUpdate(rejectUpdate);
             }
         }
@@ -218,10 +236,14 @@ public class BidServiceImpl implements BidService {
         Bid bid = getBidById(id);
         bidRepo.deleteById(id);
 
+        // Get vendor MongoDB ID
+        String vendorId = getVendorIdFromOrgId(bid.getVendorOrganizationId());
+
         // Send real-time WebSocket notification about bid deletion
         BidUpdateNotification deleteUpdate = BidUpdateNotification.builder()
                 .bidId(bid.getId())
                 .orderId(bid.getOrderId())
+                .vendorId(vendorId)
                 .vendorOrganizationId(bid.getVendorOrganizationId())
                 .status("deleted")
                 .eventType("BID_DELETED")
@@ -231,7 +253,22 @@ public class BidServiceImpl implements BidService {
                 .vendorBusinessName(bid.getVendorBusinessName())
                 .eventName(bid.getEventName())
                 .build();
-        realTimeNotificationService.sendBidUpdateToVendor(bid.getVendorOrganizationId(), deleteUpdate);
+
+        if (vendorId != null) {
+            realTimeNotificationService.sendBidUpdateToVendor(vendorId, deleteUpdate);
+        }
         realTimeNotificationService.broadcastBidUpdate(deleteUpdate);
+    }
+
+    /**
+     * Helper method to get vendor MongoDB _id from vendorOrganizationId
+     */
+    private String getVendorIdFromOrgId(String vendorOrganizationId) {
+        if (vendorOrganizationId == null) {
+            return null;
+        }
+        return vendorRepo.findByVendorOrganizationId(vendorOrganizationId)
+                .map(Vendor::getId)
+                .orElse(null);
     }
 }

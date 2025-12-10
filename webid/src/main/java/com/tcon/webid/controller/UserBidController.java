@@ -133,7 +133,7 @@ public class UserBidController {
      * Reject a bid for an order
      */
     @PutMapping("/{bidId}/reject")
-    public ResponseEntity<Bid> rejectBid(
+    public ResponseEntity<?> rejectBid(
             @PathVariable String userId,
             @PathVariable String bidId) {
 
@@ -142,7 +142,7 @@ public class UserBidController {
         Bid bid = bidService.getBidById(bidId);
         if (bid == null) {
             log.warn("Bid {} not found", bidId);
-            return ResponseEntity.notFound().build();
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(java.util.Map.of("error", "Bid not found"));
         }
 
         // Verify the user owns the order
@@ -150,13 +150,14 @@ public class UserBidController {
         if (order == null || !order.getCustomerId().equals(userId)) {
             log.warn("User {} attempted to reject bid {} for order owned by {}",
                     userId, bidId, order != null ? order.getCustomerId() : "unknown");
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(java.util.Map.of("error", "Access denied"));
         }
 
-        // Check if bid is still pending
-        if (!"pending".equalsIgnoreCase(bid.getStatus())) {
+        // Allow rejecting 'pending' or 'quoted' bids.
+        String status = bid.getStatus();
+        if (!"pending".equalsIgnoreCase(status) && !"quoted".equalsIgnoreCase(status)) {
             log.warn("Bid {} has status {} and cannot be rejected", bidId, bid.getStatus());
-            return ResponseEntity.badRequest().build();
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(java.util.Map.of("error", "Bid must be pending or quoted to reject"));
         }
 
         Bid rejectedBid = bidService.rejectBid(bidId);

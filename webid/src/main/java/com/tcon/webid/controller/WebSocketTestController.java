@@ -1,6 +1,7 @@
 package com.tcon.webid.controller;
 
 import com.tcon.webid.dto.BidUpdateNotification;
+import com.tcon.webid.dto.ChatUpdateNotification;
 import com.tcon.webid.dto.OrderUpdateNotification;
 import com.tcon.webid.service.RealTimeNotificationService;
 import lombok.extern.slf4j.Slf4j;
@@ -169,6 +170,72 @@ public class WebSocketTestController {
         realTimeNotificationService.sendOrderUpdateToVendor(vendorOrgId, notification);
 
         return ResponseEntity.ok("Order notification sent to vendor: " + vendorOrgId);
+    }
+
+    /**
+     * Test endpoint to send a sample chat notification
+     */
+    @PostMapping("/chat/broadcast")
+    public ResponseEntity<String> testChatBroadcast() {
+        log.info("Testing chat broadcast notification");
+
+        ChatUpdateNotification notification = ChatUpdateNotification.builder()
+                .messageId("test-msg-123")
+                .chatId("user1_user2")
+                .senderId("test-sender-123")
+                .recipientId("test-recipient-456")
+                .content("Test chat message")
+                .eventType("MESSAGE_SENT")
+                .messageStatus("SENT")
+                .build();
+
+        realTimeNotificationService.broadcastChatUpdate(notification);
+
+        return ResponseEntity.ok("Chat notification broadcast successfully");
+    }
+
+    /**
+     * Test endpoint to send a sample chat notification to a specific user
+     */
+    @PostMapping("/chat/user/{userId}")
+    public ResponseEntity<String> testChatToUser(@PathVariable String userId) {
+        log.info("Testing chat notification to user: {}", userId);
+
+        ChatUpdateNotification notification = ChatUpdateNotification.builder()
+                .messageId("test-msg-123")
+                .chatId("user1_user2")
+                .senderId("test-sender-123")
+                .recipientId(userId)
+                .content("Test chat message for user")
+                .eventType("MESSAGE_SENT")
+                .messageStatus("SENT")
+                .build();
+
+        realTimeNotificationService.sendChatUpdateToUser(userId, notification);
+
+        return ResponseEntity.ok("Chat notification sent to user: " + userId);
+    }
+
+    /**
+     * Test endpoint to send a sample chat notification to a specific vendor
+     */
+    @PostMapping("/chat/vendor/{vendorId}")
+    public ResponseEntity<String> testChatToVendor(@PathVariable String vendorId) {
+        log.info("Testing chat notification to vendor: {}", vendorId);
+
+        ChatUpdateNotification notification = ChatUpdateNotification.builder()
+                .messageId("test-msg-123")
+                .chatId("user1_vendor1")
+                .senderId("test-sender-123")
+                .recipientId(vendorId)
+                .content("Test chat message for vendor")
+                .eventType("MESSAGE_SENT")
+                .messageStatus("SENT")
+                .build();
+
+        realTimeNotificationService.sendChatUpdateToVendor(vendorId, notification);
+
+        return ResponseEntity.ok("Chat notification sent to vendor: " + vendorId);
     }
 
     /**

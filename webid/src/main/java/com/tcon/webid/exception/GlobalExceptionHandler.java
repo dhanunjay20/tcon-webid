@@ -1,7 +1,9 @@
 package com.tcon.webid.exception;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -16,6 +18,11 @@ import java.util.Map;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    private static final HttpHeaders JSON_HEADERS = new HttpHeaders();
+    static {
+        JSON_HEADERS.setContentType(MediaType.APPLICATION_JSON);
+    }
+
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ErrorResponse> handleBusinessException(BusinessException ex) {
         log.error("Business exception: {} - {}", ex.getErrorCode(), ex.getMessage());
@@ -25,7 +32,7 @@ public class GlobalExceptionHandler {
                 LocalDateTime.now(),
                 null
         );
-        return ResponseEntity.status(ex.getHttpStatus()).body(error);
+        return ResponseEntity.status(ex.getHttpStatus()).headers(JSON_HEADERS).body(error);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -43,7 +50,31 @@ public class GlobalExceptionHandler {
                 LocalDateTime.now(),
                 errors
         );
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).headers(JSON_HEADERS).body(error);
+    }
+
+    @ExceptionHandler({IllegalArgumentException.class})
+    public ResponseEntity<ErrorResponse> handleIllegalArgument(IllegalArgumentException ex) {
+        log.warn("Illegal argument: {}", ex.getMessage());
+        ErrorResponse error = new ErrorResponse(
+                "BAD_REQUEST",
+                ex.getMessage(),
+                LocalDateTime.now(),
+                null
+        );
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).headers(JSON_HEADERS).body(error);
+    }
+
+    @ExceptionHandler({IllegalStateException.class})
+    public ResponseEntity<ErrorResponse> handleIllegalState(IllegalStateException ex) {
+        log.warn("Illegal state: {}", ex.getMessage());
+        ErrorResponse error = new ErrorResponse(
+                "INVALID_STATE",
+                ex.getMessage(),
+                LocalDateTime.now(),
+                null
+        );
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).headers(JSON_HEADERS).body(error);
     }
 
     @ExceptionHandler(Exception.class)
@@ -55,7 +86,7 @@ public class GlobalExceptionHandler {
                 LocalDateTime.now(),
                 null
         );
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).headers(JSON_HEADERS).body(error);
     }
 
     public static class ErrorResponse {
