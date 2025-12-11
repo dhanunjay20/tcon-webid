@@ -65,20 +65,34 @@ public class ChatController {
     @MessageMapping("/typing")
     public void handleTyping(@Payload TypingStatus typingStatus) {
         try {
-            log.info("User {} typing status: {} to {}",
-                    typingStatus.getSenderId(), typingStatus.isTyping(), typingStatus.getRecipientId());
+            if (typingStatus == null) {
+                log.debug("Received null TypingStatus, ignoring");
+                return;
+            }
 
-            chatNotificationService.updateTypingStatus(
-                    typingStatus.getSenderId(),
-                    typingStatus.getRecipientId(),
-                    typingStatus.isTyping()
-            );
+            String senderId = typingStatus.getSenderId();
+            String recipientId = typingStatus.getRecipientId();
+            String vendorId = typingStatus.getVendorId();
 
-            messagingTemplate.convertAndSendToUser(
-                    typingStatus.getRecipientId(),
-                    "/queue/typing",
-                    typingStatus
-            );
+            if (senderId == null || senderId.isBlank() || recipientId == null || recipientId.isBlank()) {
+                log.warn("TypingStatus missing sender or recipient: {}", typingStatus);
+                return;
+            }
+
+            if (vendorId == null || vendorId.isBlank()) {
+                log.warn("TypingStatus missing vendorId - frontend must send vendorId in payload: {}", typingStatus);
+                return;
+            }
+
+            // Normalize nullable Boolean into a non-null boolean for logging
+            boolean isTyping = Boolean.TRUE.equals(typingStatus.isTyping());
+
+            log.info("User {} typing status: {} to {} (vendorId: {})", senderId, isTyping, recipientId, vendorId);
+
+            // Delegate to service which now handles dedupe, persistence and notifying the recipient
+            chatNotificationService.updateTypingStatus(senderId, recipientId, typingStatus.isTyping());
+
+            // Do NOT send the typing payload here - service will push it when appropriate.
         } catch (Exception e) {
             log.error("Error handling typing indicator: {}", e.getMessage(), e);
         }
@@ -125,4 +139,3 @@ public class ChatController {
         }
     }
 }
-

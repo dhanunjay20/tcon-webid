@@ -184,6 +184,28 @@ public class BidServiceImpl implements BidService {
         realTimeNotificationService.sendBidUpdateToVendor(bid.getVendorOrganizationId(), rejectUpdate);
         realTimeNotificationService.broadcastBidUpdate(rejectUpdate);
 
+        // Update order status to 'rejected' if there are no remaining active bids for this order
+        Order order = orderRepo.findById(bid.getOrderId()).orElse(null);
+        if (order != null) {
+            // Check if any other bid for this order is still pending/quoted/accepted
+            List<Bid> otherBids = bidRepo.findByOrderId(order.getId());
+            boolean hasActive = otherBids.stream()
+                    .anyMatch(b -> !b.getId().equals(savedBid.getId()) && (
+                            "pending".equalsIgnoreCase(b.getStatus()) ||
+                            "quoted".equalsIgnoreCase(b.getStatus()) ||
+                            "accepted".equalsIgnoreCase(b.getStatus())
+                    ));
+
+            if (!hasActive) {
+                // Only mark order as rejected if it is not already confirmed
+                if (!"confirmed".equalsIgnoreCase(order.getStatus())) {
+                    order.setStatus("rejected");
+                    order.setUpdatedAt(Instant.now().toString());
+                    orderRepo.save(order);
+                }
+            }
+        }
+
         return savedBid;
     }
 

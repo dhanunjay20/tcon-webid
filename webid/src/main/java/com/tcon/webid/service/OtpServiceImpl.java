@@ -29,9 +29,12 @@ public class OtpServiceImpl implements OtpService {
     private MailService mailService;
     @Autowired
     private WhatsAppService whatsAppService;
+    @Autowired
+    private EmailTemplateService emailTemplateService;
 
     @Override
     public void generateAndSendOtp(String contact) {
+        // ...existing code...
         // Normalize contact so OTP keys are consistent
         String normContact = contact != null && contact.contains("@") ? ContactUtils.normalizeEmail(contact) : ContactUtils.normalizeMobile(contact);
         String otp = String.format("%06d", random.nextInt(1_000_000));
@@ -46,7 +49,8 @@ public class OtpServiceImpl implements OtpService {
         // Send via email or WhatsApp depending on contact format
         if (normContact.contains("@")) {
             log.info("Sending OTP via email to: {}", normContact);
-            mailService.sendSimpleMail(normContact, "Your OTP - Event Bidding", "Your OTP is: " + otp + "\n\nThis OTP will expire in 5 minutes.");
+            String htmlBody = emailTemplateService.generateOtpEmail(otp);
+            mailService.sendHtmlMail(normContact, "Your OTP - Event Bidding", htmlBody);
             log.info("OTP email sent successfully to: {}", normContact);
         } else {
             log.info("Sending OTP via WhatsApp to: {}", normContact);
