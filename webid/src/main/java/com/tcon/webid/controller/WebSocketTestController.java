@@ -1,7 +1,7 @@
 package com.tcon.webid.controller;
 
 import com.tcon.webid.dto.BidUpdateNotification;
-import com.tcon.webid.dto.ChatUpdateNotification;
+import com.tcon.webid.dto.ChatEventDto;
 import com.tcon.webid.dto.OrderUpdateNotification;
 import com.tcon.webid.service.RealTimeNotificationService;
 import lombok.extern.slf4j.Slf4j;
@@ -179,17 +179,17 @@ public class WebSocketTestController {
     public ResponseEntity<String> testChatBroadcast() {
         log.info("Testing chat broadcast notification");
 
-        ChatUpdateNotification notification = ChatUpdateNotification.builder()
+        ChatEventDto event = ChatEventDto.builder()
+                .eventType(ChatEventDto.EventType.MESSAGE_NEW)
                 .messageId("test-msg-123")
                 .chatId("user1_user2")
                 .senderId("test-sender-123")
                 .recipientId("test-recipient-456")
                 .content("Test chat message")
-                .eventType("MESSAGE_SENT")
                 .messageStatus("SENT")
                 .build();
 
-        realTimeNotificationService.broadcastChatUpdate(notification);
+        realTimeNotificationService.broadcastChatEvent(event);
 
         return ResponseEntity.ok("Chat notification broadcast successfully");
     }
@@ -201,17 +201,17 @@ public class WebSocketTestController {
     public ResponseEntity<String> testChatToUser(@PathVariable String userId) {
         log.info("Testing chat notification to user: {}", userId);
 
-        ChatUpdateNotification notification = ChatUpdateNotification.builder()
+        ChatEventDto event = ChatEventDto.builder()
+                .eventType(ChatEventDto.EventType.MESSAGE_NEW)
                 .messageId("test-msg-123")
                 .chatId("user1_user2")
                 .senderId("test-sender-123")
                 .recipientId(userId)
                 .content("Test chat message for user")
-                .eventType("MESSAGE_SENT")
                 .messageStatus("SENT")
                 .build();
 
-        realTimeNotificationService.sendChatUpdateToUser(userId, notification);
+        realTimeNotificationService.sendChatEventToUser(userId, event);
 
         return ResponseEntity.ok("Chat notification sent to user: " + userId);
     }
@@ -223,17 +223,17 @@ public class WebSocketTestController {
     public ResponseEntity<String> testChatToVendor(@PathVariable String vendorId) {
         log.info("Testing chat notification to vendor: {}", vendorId);
 
-        ChatUpdateNotification notification = ChatUpdateNotification.builder()
+        ChatEventDto event = ChatEventDto.builder()
+                .eventType(ChatEventDto.EventType.MESSAGE_NEW)
                 .messageId("test-msg-123")
                 .chatId("user1_vendor1")
                 .senderId("test-sender-123")
                 .recipientId(vendorId)
                 .content("Test chat message for vendor")
-                .eventType("MESSAGE_SENT")
                 .messageStatus("SENT")
                 .build();
 
-        realTimeNotificationService.sendChatUpdateToVendor(vendorId, notification);
+        realTimeNotificationService.sendChatEventToVendor(vendorId, event);
 
         return ResponseEntity.ok("Chat notification sent to vendor: " + vendorId);
     }

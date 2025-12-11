@@ -7,13 +7,14 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * DTO for typing indicator status
+ * DTO for typing indicator status.
+ * Sent when user starts or stops typing.
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class TypingStatus {
+public class TypingStatusDto {
 
     /**
      * ID of the user who is typing
@@ -21,27 +22,31 @@ public class TypingStatus {
     private String senderId;
 
     /**
+     * Type of sender: "USER" or "VENDOR"
+     */
+    private String senderType;
+
+    /**
      * ID of the recipient
      */
     private String recipientId;
 
     /**
-     * Vendor ID (sent by frontend)
+     * Chat room ID
      */
-    private String vendorId;
+    private String chatId;
 
     /**
-     * Whether the user is currently typing.
-     * Backing field is named `typing` to avoid Lombok/Jackson getter conflicts,
-     * but the JSON property name remains `isTyping`.
+     * Whether the user is currently typing
      */
     @JsonProperty("isTyping")
     private Boolean typing;
 
     /**
-     * Explicit getter that preserves the previous method name used throughout the codebase.
+     * Explicit getter for backward compatibility
      */
     public Boolean isTyping() {
         return this.typing;
     }
 }
+

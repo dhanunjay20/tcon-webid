@@ -1,7 +1,7 @@
 package com.tcon.webid.service;
 
 import com.tcon.webid.dto.BidUpdateNotification;
-import com.tcon.webid.dto.ChatUpdateNotification;
+import com.tcon.webid.dto.ChatEventDto;
 import com.tcon.webid.dto.OrderUpdateNotification;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -81,33 +81,33 @@ public class RealTimeNotificationServiceImpl implements RealTimeNotificationServ
     }
 
     @Override
-    public void broadcastChatUpdate(ChatUpdateNotification notification) {
+    public void broadcastChatEvent(ChatEventDto event) {
         try {
-            log.info("Broadcasting chat update: {} for message {}", notification.getEventType(), notification.getMessageId());
-            messagingTemplate.convertAndSend("/topic/chats", notification);
+            log.info("Broadcasting chat event: {} for chat {}", event.getEventType(), event.getChatId());
+            messagingTemplate.convertAndSend("/topic/chat-events", event);
         } catch (Exception e) {
-            log.error("Failed to broadcast chat update", e);
+            log.error("Failed to broadcast chat event", e);
         }
     }
 
     @Override
-    public void sendChatUpdateToUser(String userId, ChatUpdateNotification notification) {
+    public void sendChatEventToUser(String userId, ChatEventDto event) {
         try {
-            log.info("Sending chat update to user {}: {} for message {}", userId, notification.getEventType(), notification.getMessageId());
-            messagingTemplate.convertAndSendToUser(userId, "/queue/chats", notification);
+            log.info("Sending chat event to user {}: {}", userId, event.getEventType());
+            messagingTemplate.convertAndSendToUser(userId, "/queue/chat-events", event);
         } catch (Exception e) {
-            log.error("Failed to send chat update to user {}", userId, e);
+            log.error("Failed to send chat event to user {}", userId, e);
         }
     }
 
     @Override
-    public void sendChatUpdateToVendor(String vendorId, ChatUpdateNotification notification) {
+    public void sendChatEventToVendor(String vendorId, ChatEventDto event) {
         try {
-            log.info("Sending chat update to vendor {}: {} for message {}", vendorId, notification.getEventType(), notification.getMessageId());
+            log.info("Sending chat event to vendor {}: {}", vendorId, event.getEventType());
             // Send to vendor-specific queue using MongoDB _id
-            messagingTemplate.convertAndSend("/topic/vendor/" + vendorId + "/chats", notification);
+            messagingTemplate.convertAndSend("/topic/vendor/" + vendorId + "/chat-events", event);
         } catch (Exception e) {
-            log.error("Failed to send chat update to vendor {}", vendorId, e);
+            log.error("Failed to send chat event to vendor {}", vendorId, e);
         }
     }
 }

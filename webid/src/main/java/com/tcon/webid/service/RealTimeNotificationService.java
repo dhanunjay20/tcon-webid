@@ -1,7 +1,7 @@
 package com.tcon.webid.service;
 
 import com.tcon.webid.dto.BidUpdateNotification;
-import com.tcon.webid.dto.ChatUpdateNotification;
+import com.tcon.webid.dto.ChatEventDto;
 import com.tcon.webid.dto.OrderUpdateNotification;
 
 /**
@@ -50,24 +50,24 @@ public interface RealTimeNotificationService {
     void sendOrderUpdateToVendor(String vendorId, OrderUpdateNotification notification);
 
     /**
-     * Broadcast chat update to all subscribed users
-     * @param notification The chat update notification
+     * Broadcast chat event to all subscribed users
+     * @param event The chat event
      */
-    void broadcastChatUpdate(ChatUpdateNotification notification);
+    void broadcastChatEvent(ChatEventDto event);
 
     /**
-     * Send chat update to a specific user
+     * Send chat event to a specific user
      * @param userId The user ID to send to
-     * @param notification The chat update notification
+     * @param event The chat event
      */
-    void sendChatUpdateToUser(String userId, ChatUpdateNotification notification);
+    void sendChatEventToUser(String userId, ChatEventDto event);
 
     /**
-     * Send chat update to a specific vendor using MongoDB _id
+     * Send chat event to a specific vendor using MongoDB _id
      * @param vendorId The vendor MongoDB _id to send to
-     * @param notification The chat update notification
+     * @param event The chat event
      */
-    void sendChatUpdateToVendor(String vendorId, ChatUpdateNotification notification);
+    void sendChatEventToVendor(String vendorId, ChatEventDto event);
 }
 
 

@@ -1,58 +1,42 @@
 package com.tcon.webid.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * DTO for chat list item with notification info
+ * DTO for chat list item (used in chat list/inbox view).
+ * Shows conversation preview with unread count and participant status.
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class ChatListItemDto {
 
     /**
-     * MongoDB ObjectId of the other participant
-     */
-    private String participantId;
-
-    /**
-     * Name of the other participant
-     */
-    private String participantName;
-
-    /**
-     * Type: "USER" or "VENDOR"
-     */
-    private String participantType;
-
-    /**
-     * Profile URL of the other participant
-     */
-    private String participantProfileUrl;
-
-    /**
-     * Chat ID
+     * Chat room ID
      */
     private String chatId;
+
+    /**
+     * Other participant information
+     */
+    private String participantId;
+    private String participantType;
+    private String participantName;
+    private String participantProfileUrl;
 
     /**
      * Last message preview
      */
     private String lastMessage;
-
-    /**
-     * Who sent the last message (MongoDB ObjectId)
-     */
     private String lastMessageSenderId;
-
-    /**
-     * Timestamp of last message
-     */
     private String lastMessageTimestamp;
+    private String lastMessageStatus;
 
     /**
      * Number of unread messages
@@ -60,13 +44,26 @@ public class ChatListItemDto {
     private int unreadCount;
 
     /**
-     * Online status: "ONLINE" or "OFFLINE"
+     * Participant status
      */
-    private String onlineStatus;
+    private boolean online;
+    private boolean typing;
+    private String lastSeen;
 
     /**
-     * Whether the participant is typing
+     * Helper to format last seen for display
      */
-    private boolean isTyping;
+    public String getLastSeenFormatted() {
+        if (online) {
+            return "Online";
+        }
+        if (typing) {
+            return "Typing...";
+        }
+        if (lastSeen == null || lastSeen.isEmpty()) {
+            return "Offline";
+        }
+        return "Last seen: " + lastSeen;
+    }
 }
 

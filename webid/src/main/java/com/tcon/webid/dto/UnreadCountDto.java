@@ -6,7 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * DTO for unread message count summary
+ * DTO for unread message count summary.
  */
 @Data
 @Builder
@@ -15,7 +15,7 @@ import lombok.NoArgsConstructor;
 public class UnreadCountDto {
 
     /**
-     * MongoDB ObjectId of the user/vendor
+     * User ID
      */
     private String userId;
 
