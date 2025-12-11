@@ -19,5 +19,12 @@ public class VendorResponseDto {
     private String mobile;
     private List<Address> addresses;
     private List<LicenseDocument> licenseDocuments;
+    private Boolean isOnline; // Vendor online status
+    private String lastSeenAt; // Last seen timestamp
+    
+    // Additional business information
+    private String website;
+    private Integer yearsInBusiness;
+    private String aboutBusiness;
 }
 

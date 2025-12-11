@@ -9,6 +9,7 @@ import com.tcon.webid.entity.Vendor;
 import com.tcon.webid.repository.ChatNotificationMetadataRepository;
 import com.tcon.webid.repository.UserRepository;
 import com.tcon.webid.repository.VendorRepository;
+import com.tcon.webid.dto.TypingStatus;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -237,6 +238,30 @@ public class ChatNotificationService {
                 }
             }
 
+            // Also update Vendor's online status if this is a vendor
+            try {
+                Vendor vendor = vendorRepository.findById(userId).orElse(null);
+                if (vendor != null) {
+                    vendor.setIsOnline("ONLINE".equalsIgnoreCase(status));
+                    vendor.setLastSeenAt(Instant.now().toString());
+                    vendorRepository.save(vendor);
+                    log.info("Updated vendor online status: {} for vendor {}", status, userId);
+                }
+            } catch (Exception ve) {
+                log.debug("Not a vendor ID or vendor update failed: {}", userId);
+            }
+
+            // Also update User's online status if this is a user
+            try {
+                User user = userRepository.findById(userId).orElse(null);
+                if (user != null) {
+                    // Users may not have isOnline field, so just log the update
+                    log.debug("Updated user status to {} for user {}", status, userId);
+                }
+            } catch (Exception ue) {
+                log.debug("Not a user ID or user update failed: {}", userId);
+            }
+
             log.info("Updated online status to {} for user {}", status, userId);
         } catch (Exception e) {
             log.error("Error updating online status: {}", e.getMessage(), e);
@@ -246,23 +271,63 @@ public class ChatNotificationService {
     /**
      * Update typing status for a user/vendor
      *
-     * @param userId             MongoDB ObjectId of the user who is typing
+     * @param userId MongoDB ObjectId of the user who is typing (sender)
      * @param otherParticipantId MongoDB ObjectId of the recipient
-     * @param isTyping           true if typing, false otherwise
+     * @param isTypingObj        true if typing, false otherwise (nullable; null treated as false)
      */
-    public void updateTypingStatus(String userId, String otherParticipantId, boolean isTyping) {
+    public void updateTypingStatus(String userId, String otherParticipantId, Boolean isTypingObj) {
         try {
-            // Update the recipient's metadata to show the sender is typing
+            if (userId == null || otherParticipantId == null) {
+                log.debug("updateTypingStatus called with null userId/otherParticipantId: {}, {}", userId, otherParticipantId);
+                return;
+            }
+
+            boolean newTyping = Boolean.TRUE.equals(isTypingObj);
+
+            // Update the recipient's metadata to show the sender is typing.
+            // We look up the metadata record for the recipient where the other participant is the sender.
             Optional<ChatNotificationMetadata> metadataOpt =
                     notificationMetadataRepository.findByUserIdAndOtherParticipantId(otherParticipantId, userId);
 
             if (metadataOpt.isPresent()) {
                 ChatNotificationMetadata metadata = metadataOpt.get();
-                metadata.setTyping(isTyping);
+
+                // If there is no change in typing state, do nothing (avoid redundant DB writes & notifications)
+                boolean currentTyping = metadata.isTyping();
+                if (currentTyping == newTyping) {
+                    log.debug("No typing state change for chat {} (participant {} -> {}), still {}",
+                            metadata.getChatId(), userId, otherParticipantId, newTyping);
+                    return;
+                }
+
+                metadata.setTyping(newTyping);
                 metadata.setUpdatedAt(Instant.now().toString());
                 notificationMetadataRepository.save(metadata);
-                log.debug("Updated typing status to {} for user {} in chat with {}",
-                        isTyping, userId, otherParticipantId);
+
+                log.debug("Updated typing status to {} for user {} in chat with {}", newTyping, userId, otherParticipantId);
+
+                // Send a compact typing DTO to the recipient to update their UI.
+                // Keep the payload minimal and deterministic.
+                TypingStatus outbound = TypingStatus.builder()
+                        .senderId(userId)
+                        .recipientId(otherParticipantId)
+                        .typing(newTyping)
+                        .build();
+
+                try {
+                    messagingTemplate.convertAndSendToUser(
+                            otherParticipantId,
+                            "/queue/typing",
+                            outbound
+                    );
+                } catch (Exception me) {
+                    log.warn("Failed to send typing notification to user {}: {}", otherParticipantId, me.getMessage());
+                }
+            } else {
+                // No metadata existed. We avoid creating a metadata record just for typing.
+                // Optionally, you can create a lightweight metadata record if you want typing to work
+                // even before a prior message exists.
+                log.debug("No ChatNotificationMetadata found for user {} with participant {} — skipping typing update", otherParticipantId, userId);
             }
         } catch (Exception e) {
             log.error("Error updating typing status: {}", e.getMessage(), e);
@@ -351,4 +416,3 @@ public class ChatNotificationService {
         }
     }
 }
-

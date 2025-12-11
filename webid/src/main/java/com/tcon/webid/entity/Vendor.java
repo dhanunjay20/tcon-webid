@@ -26,4 +26,11 @@ public class Vendor {
     private String passwordHash;
     private List<Address> addresses;
     private List<LicenseDocument> licenseDocuments;
+    private Boolean isOnline = false; // Track vendor online status
+    private String lastSeenAt; // Track last seen timestamp (ISO 8601 format)
+
+    // Additional business information
+    private String website;
+    private Integer yearsInBusiness;
+    private String aboutBusiness;
 }

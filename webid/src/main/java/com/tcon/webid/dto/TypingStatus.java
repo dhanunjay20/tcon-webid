@@ -1,5 +1,6 @@
 package com.tcon.webid.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -25,7 +26,22 @@ public class TypingStatus {
     private String recipientId;
 
     /**
-     * Whether the user is currently typing
+     * Vendor ID (sent by frontend)
      */
-    private boolean isTyping;
+    private String vendorId;
+
+    /**
+     * Whether the user is currently typing.
+     * Backing field is named `typing` to avoid Lombok/Jackson getter conflicts,
+     * but the JSON property name remains `isTyping`.
+     */
+    @JsonProperty("isTyping")
+    private Boolean typing;
+
+    /**
+     * Explicit getter that preserves the previous method name used throughout the codebase.
+     */
+    public Boolean isTyping() {
+        return this.typing;
+    }
 }
