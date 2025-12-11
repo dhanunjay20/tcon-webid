@@ -8,5 +8,6 @@ public interface VendorService {
     VendorResponseDto loginVendor(String login, String password);
     VendorResponseDto getVendorById(String id);
     List<VendorResponseDto> getAllVendors();
-    // add update/delete as needed for full CRUD
+    VendorResponseDto updateVendor(String id, VendorUpdateDto dto);
+    // add delete as needed for full CRUD
 }
