@@ -304,13 +304,18 @@ public class ChatNotificationService {
                 metadata.setUpdatedAt(Instant.now().toString());
                 notificationMetadataRepository.save(metadata);
 
-                log.debug("Updated typing status to {} for user {} in chat with {}", newTyping, userId, otherParticipantId);
+                log.info("Updated typing status to {} for user {} ({}) in chat with {}",
+                        newTyping, userId, metadata.getOtherParticipantType(), otherParticipantId);
+
+                // Determine sender type based on metadata
+                String senderType = "USER".equals(metadata.getOtherParticipantType()) ? "VENDOR" : "USER";
 
                 // Send a compact typing DTO to the recipient to update their UI.
                 // Keep the payload minimal and deterministic.
                 TypingStatus outbound = TypingStatus.builder()
                         .senderId(userId)
                         .recipientId(otherParticipantId)
+                        .senderType(senderType)
                         .typing(newTyping)
                         .build();
 
@@ -320,6 +325,8 @@ public class ChatNotificationService {
                             "/queue/typing",
                             outbound
                     );
+                    log.debug("Sent typing notification to user {}: sender={}, senderType={}, typing={}",
+                            otherParticipantId, userId, senderType, newTyping);
                 } catch (Exception me) {
                     log.warn("Failed to send typing notification to user {}: {}", otherParticipantId, me.getMessage());
                 }

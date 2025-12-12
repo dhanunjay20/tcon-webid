@@ -1,6 +1,8 @@
 package com.tcon.webid.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonAlias;
+import com.fasterxml.jackson.annotation.JsonSetter;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -31,11 +33,16 @@ public class TypingStatus {
     private String vendorId;
 
     /**
+     * Sender type: "VENDOR" or "USER"
+     */
+    private String senderType;
+
+    /**
      * Whether the user is currently typing.
-     * Backing field is named `typing` to avoid Lombok/Jackson getter conflicts,
-     * but the JSON property name remains `isTyping`.
+     * Accept either JSON property name `isTyping` or legacy `typing`.
      */
     @JsonProperty("isTyping")
+    @JsonAlias({"typing"})
     private Boolean typing;
 
     /**
@@ -43,5 +50,33 @@ public class TypingStatus {
      */
     public Boolean isTyping() {
         return this.typing;
+    }
+
+    // Single tolerant JsonSetter to avoid conflicting overloaded setters.
+    @JsonSetter("isTyping")
+    @JsonAlias({"typing"})
+    public void setIsTyping(Object value) {
+        if (value == null) {
+            this.typing = null;
+            return;
+        }
+        if (value instanceof Boolean) {
+            this.typing = (Boolean) value;
+            return;
+        }
+        if (value instanceof Number) {
+            this.typing = ((Number) value).intValue() != 0;
+            return;
+        }
+        // Fallback to string parsing
+        String s = value.toString().trim().toLowerCase();
+        if (s.equals("1") || s.equals("true") || s.equals("yes") || s.equals("y")) {
+            this.typing = Boolean.TRUE;
+        } else if (s.equals("0") || s.equals("false") || s.equals("no") || s.equals("n")) {
+            this.typing = Boolean.FALSE;
+        } else {
+            // Last resort: Boolean.parseBoolean (false for unknown values)
+            this.typing = Boolean.parseBoolean(s);
+        }
     }
 }

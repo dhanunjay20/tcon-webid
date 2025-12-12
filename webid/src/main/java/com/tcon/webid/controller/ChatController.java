@@ -6,12 +6,15 @@ import com.tcon.webid.dto.UserStatus;
 import com.tcon.webid.entity.ChatMessage;
 import com.tcon.webid.service.ChatService;
 import com.tcon.webid.service.ChatNotificationService;
+import com.tcon.webid.repository.VendorRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
+
+import java.security.Principal;
 
 @Slf4j
 @Controller
@@ -25,6 +28,9 @@ public class ChatController {
 
     @Autowired
     private ChatNotificationService chatNotificationService;
+
+    @Autowired
+    private VendorRepository vendorRepository;
 
     @MessageMapping("/chat")
     public void processMessage(@Payload ChatMessage chatMessage) {
@@ -63,36 +69,57 @@ public class ChatController {
     }
 
     @MessageMapping("/typing")
-    public void handleTyping(@Payload TypingStatus typingStatus) {
+    public void handleTyping(@Payload TypingStatus typingStatus, Principal principal) {
         try {
             if (typingStatus == null) {
                 log.debug("Received null TypingStatus, ignoring");
                 return;
             }
 
+            // Log raw incoming payload for debugging
+            log.debug("Raw TypingStatus payload received: {}", typingStatus);
+
             String senderId = typingStatus.getSenderId();
             String recipientId = typingStatus.getRecipientId();
-            String vendorId = typingStatus.getVendorId();
+
+            // Use principal if senderId is not provided
+            if (principal != null && (senderId == null || senderId.isBlank())) {
+                senderId = principal.getName();
+                typingStatus.setSenderId(senderId);
+            }
 
             if (senderId == null || senderId.isBlank() || recipientId == null || recipientId.isBlank()) {
                 log.warn("TypingStatus missing sender or recipient: {}", typingStatus);
                 return;
             }
 
-            if (vendorId == null || vendorId.isBlank()) {
-                log.warn("TypingStatus missing vendorId - frontend must send vendorId in payload: {}", typingStatus);
-                return;
+            // Determine sender type if not provided
+            if (typingStatus.getSenderType() == null || typingStatus.getSenderType().isBlank()) {
+                // Check if vendorId is provided and matches senderId
+                if (typingStatus.getVendorId() != null && senderId.equals(typingStatus.getVendorId())) {
+                    typingStatus.setSenderType("VENDOR");
+                } else if (typingStatus.getVendorId() != null && senderId.equals(recipientId)) {
+                    typingStatus.setSenderType("USER");
+                } else {
+                    // Fallback: check if sender is vendor by querying vendor repository
+                    boolean isVendor = vendorRepository.existsById(senderId);
+                    typingStatus.setSenderType(isVendor ? "VENDOR" : "USER");
+                }
             }
 
             // Normalize nullable Boolean into a non-null boolean for logging
-            boolean isTyping = Boolean.TRUE.equals(typingStatus.isTyping());
+            Boolean rawTypingObj = typingStatus.isTyping();
+            boolean isTyping = Boolean.TRUE.equals(rawTypingObj);
 
-            log.info("User {} typing status: {} to {} (vendorId: {})", senderId, isTyping, recipientId, vendorId);
+            // Extra debug: log explicit rawTypingObj
+            log.debug("Normalized typing value: raw={} normalized={}", rawTypingObj, isTyping);
 
-            // Delegate to service which now handles dedupe, persistence and notifying the recipient
+            log.info("Typing status from {} ({}): sender={}, recipient={}, typing={}",
+                    senderId, typingStatus.getSenderType(), senderId, recipientId, isTyping);
+
+            // Delegate to service which handles persistence and notifying the recipient
             chatNotificationService.updateTypingStatus(senderId, recipientId, typingStatus.isTyping());
 
-            // Do NOT send the typing payload here - service will push it when appropriate.
         } catch (Exception e) {
             log.error("Error handling typing indicator: {}", e.getMessage(), e);
         }

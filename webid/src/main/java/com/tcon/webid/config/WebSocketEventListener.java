@@ -1,11 +1,12 @@
 package com.tcon.webid.config;
 
+import com.tcon.webid.dto.TypingStatus;
 import com.tcon.webid.service.ChatNotificationService;
 import com.tcon.webid.util.JwtUtil;
 import io.jsonwebtoken.Claims;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.event.EventListener;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.messaging.SessionConnectEvent;
@@ -21,14 +22,17 @@ public class WebSocketEventListener {
 
     private final ChatNotificationService chatNotificationService;
     private final JwtUtil jwtUtil;
+    private final SimpMessagingTemplate messagingTemplate;
 
     // Map sessionId -> userId (subject from JWT or principal name)
     private final ConcurrentMap<String, String> sessionUserMap = new ConcurrentHashMap<>();
 
-    @Autowired
-    public WebSocketEventListener(ChatNotificationService chatNotificationService, JwtUtil jwtUtil) {
+    public WebSocketEventListener(ChatNotificationService chatNotificationService,
+                                  JwtUtil jwtUtil,
+                                  SimpMessagingTemplate messagingTemplate) {
         this.chatNotificationService = chatNotificationService;
         this.jwtUtil = jwtUtil;
+        this.messagingTemplate = messagingTemplate;
     }
 
     @EventListener
@@ -89,4 +93,3 @@ public class WebSocketEventListener {
         }
     }
 }
-
