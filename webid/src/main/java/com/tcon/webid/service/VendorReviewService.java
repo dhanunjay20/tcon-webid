@@ -8,4 +8,5 @@ public interface VendorReviewService {
     VendorReview addReview(VendorReviewRequestDto dto);
     List<VendorReview> getReviewsByVendor(String vendorOrganizationId);
     void deleteReview(String id);
+    List<VendorReview> getLatestReviewsByVendor(String vendorOrganizationId);
 }

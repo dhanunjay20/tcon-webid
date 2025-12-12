@@ -3,7 +3,9 @@ package com.tcon.webid.controller;
 import com.tcon.webid.dto.UserRegistrationDto;
 import com.tcon.webid.dto.UserUpdateDto;
 import com.tcon.webid.dto.UserResponseDto;
+import com.tcon.webid.entity.Order;
 import com.tcon.webid.entity.User;
+import com.tcon.webid.service.OrderService;
 import com.tcon.webid.service.UserService;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
@@ -22,6 +24,9 @@ public class UserController {
 
     @Autowired
     private UserService userService;
+
+    @Autowired
+    private OrderService orderService;
 
     private UserResponseDto toDto(User user) {
         if (user == null) return null;

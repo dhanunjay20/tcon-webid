@@ -31,6 +31,8 @@ public class AuthServiceImpl implements AuthService {
     private MailService mailService;
     @Autowired
     private WhatsAppService whatsAppService;
+    @Autowired
+    private EmailTemplateService emailTemplateService;
 
     @Override
     public AuthResponseDto login(LoginRequestDto loginDto) {
@@ -165,7 +167,8 @@ public class AuthServiceImpl implements AuthService {
                 if (isEmail) {
                     log.info("Sending username to email: {}", normalized);
                     try {
-                        mailService.sendSimpleMail(normalized, "Your Username - Event Bidding", message);
+                        String htmlBody = emailTemplateService.generateUsernameEmail(username, false, null);
+                        mailService.sendHtmlMail(normalized, "Your Username - Event Bidding", htmlBody);
                         log.info("Username sent successfully via email to: {}", normalized);
                     } catch (Exception e) {
                         log.error("Failed to send username email to: {}", normalized, e);
@@ -194,7 +197,8 @@ public class AuthServiceImpl implements AuthService {
                 if (isEmail) {
                     log.info("Sending vendor username to email: {}", normalized);
                     try {
-                        mailService.sendSimpleMail(normalized, "Your Vendor Organization ID - Event Bidding", message);
+                        String htmlBody = emailTemplateService.generateUsernameEmail(username, true, vendor.getBusinessName());
+                        mailService.sendHtmlMail(normalized, "Your Vendor Organization ID - Event Bidding", htmlBody);
                         log.info("Vendor username sent successfully via email to: {}", normalized);
                     } catch (Exception e) {
                         log.error("Failed to send vendor username email to: {}", normalized, e);

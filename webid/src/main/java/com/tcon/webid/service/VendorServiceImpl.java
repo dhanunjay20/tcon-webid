@@ -27,9 +27,17 @@ public class VendorServiceImpl implements VendorService {
     private JwtUtil jwtUtil;
     @Autowired
     private MailService mailService;
+    @Autowired
+    private EmailTemplateService emailTemplateService;
 
     @Override
     public VendorResponseDto registerVendor(VendorRegistrationDto dto) {
+        // Ensure vendorOrganizationId must be provided by frontend — do not auto-generate on backend
+        String orgId = dto.getVendorOrganizationId() == null ? null : dto.getVendorOrganizationId().trim();
+        if (orgId == null || orgId.isBlank()) {
+            throw new RuntimeException("vendorOrganizationId must be provided by the client");
+        }
+
         String email = ContactUtils.normalizeEmail(dto.getEmail());
         String mobile = ContactUtils.normalizeMobile(dto.getMobile());
 
@@ -37,11 +45,11 @@ public class VendorServiceImpl implements VendorService {
             throw new RuntimeException("Email already registered");
         if (vendorRepo.existsByMobile(mobile))
             throw new RuntimeException("Mobile number already registered");
-        if (vendorRepo.existsByVendorOrganizationId(dto.getVendorOrganizationId()))
+        if (vendorRepo.existsByVendorOrganizationId(orgId))
             throw new RuntimeException("Organization ID already registered");
 
         Vendor vendor = new Vendor();
-        vendor.setVendorOrganizationId(dto.getVendorOrganizationId());
+        vendor.setVendorOrganizationId(orgId);
         vendor.setBusinessName(dto.getBusinessName());
         vendor.setContactName(dto.getContactName());
         vendor.setEmail(email);
@@ -54,28 +62,16 @@ public class VendorServiceImpl implements VendorService {
         // Send vendorOrganizationId to vendor's email
         try {
             String emailSubject = "Vendor Registration Successful - Event Bidding";
-            String emailBody = String.format(
-                "Dear %s,\n\n" +
-                "Your vendor registration has been completed successfully!\n\n" +
-                "Your Vendor Organization ID: %s\n\n" +
-                "Please use this Organization ID to login to the system.\n\n" +
-                "Business Name: %s\n" +
-                "Contact Person: %s\n" +
-                "Email: %s\n" +
-                "Mobile: %s\n\n" +
-                "Thank you for registering with us.\n\n" +
-                "Best Regards,\n" +
-                "Event Bidding Team",
+            String htmlBody = emailTemplateService.generateVendorRegistrationEmail(
                 saved.getContactName(),
                 saved.getVendorOrganizationId(),
                 saved.getBusinessName(),
-                saved.getContactName(),
                 saved.getEmail(),
                 saved.getMobile()
             );
 
             log.info("Sending vendorOrganizationId to vendor email: {}", saved.getEmail());
-            mailService.sendSimpleMail(saved.getEmail(), emailSubject, emailBody);
+            mailService.sendHtmlMail(saved.getEmail(), emailSubject, htmlBody);
             log.info("VendorOrganizationId sent successfully to: {}", saved.getEmail());
         } catch (Exception e) {
             log.error("Failed to send vendorOrganizationId email to: {}", saved.getEmail(), e);
@@ -143,9 +139,30 @@ public class VendorServiceImpl implements VendorService {
         if (dto.getAddresses() != null) vendor.setAddresses(dto.getAddresses());
         if (dto.getLicenseDocuments() != null) vendor.setLicenseDocuments(dto.getLicenseDocuments());
 
+        // Update new business information fields
+        if (dto.getWebsite() != null && !dto.getWebsite().isBlank()) {
+            vendor.setWebsite(dto.getWebsite());
+            log.info("Updating vendor website to: {}", dto.getWebsite());
+        }
+        if (dto.getYearsInBusiness() != null) {
+            vendor.setYearsInBusiness(dto.getYearsInBusiness());
+            log.info("Updating vendor yearsInBusiness to: {}", dto.getYearsInBusiness());
+        }
+        if (dto.getAboutBusiness() != null && !dto.getAboutBusiness().isBlank()) {
+            vendor.setAboutBusiness(dto.getAboutBusiness());
+            log.info("Updating vendor aboutBusiness");
+        }
+
         Vendor updated = vendorRepo.save(vendor);
         log.info("Vendor updated: {}", updated.getId());
         return toResponseDto(updated);
+    }
+
+    @Override
+    public VendorResponseDto getVendorByOrganizationId(String organizationId) {
+        return vendorRepo.findByVendorOrganizationId(organizationId)
+                .map(this::toResponseDto)
+                .orElseThrow(() -> new RuntimeException("Vendor not found"));
     }
 
     private VendorResponseDto toResponseDto(Vendor v) {
@@ -157,7 +174,12 @@ public class VendorServiceImpl implements VendorService {
                 v.getEmail(),
                 v.getMobile(),
                 v.getAddresses(),
-                v.getLicenseDocuments()
+                v.getLicenseDocuments(),
+                v.getIsOnline(),
+                v.getLastSeenAt(),
+                v.getWebsite(),
+                v.getYearsInBusiness(),
+                v.getAboutBusiness()
         );
     }
 }

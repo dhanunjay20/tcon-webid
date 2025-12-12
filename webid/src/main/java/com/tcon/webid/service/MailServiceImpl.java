@@ -1,11 +1,13 @@
 package com.tcon.webid.service;
 
+import jakarta.mail.internet.MimeMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -74,6 +76,62 @@ public class MailServiceImpl implements MailService {
             log.error("Full stack trace:", e);
             // Throw the exception so caller knows it failed
             throw new RuntimeException("Failed to send email to " + to + ": " + e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public void sendHtmlMail(String to, String subject, String htmlBody) {
+        try {
+            log.info("=== HTML EMAIL SEND ATTEMPT ===");
+            log.info("To: {}", to);
+            log.info("Subject: {}", subject);
+            log.info("Preparing to send HTML email to: {}, subject: {}", to, subject);
+
+            if (mailSender != null) {
+                log.info("JavaMailSender implementation: {}", mailSender.getClass().getName());
+            } else {
+                log.warn("JavaMailSender bean is null");
+            }
+
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+
+            helper.setTo(to);
+            helper.setSubject(subject);
+            helper.setText(htmlBody, true); // true = HTML
+
+            if (mailFrom != null && !mailFrom.isEmpty()) {
+                helper.setFrom(mailFrom);
+            } else {
+                helper.setFrom("info@tconsolutions.com");
+            }
+
+            log.info("Sending HTML email via JavaMailSender (from={})...", mailFrom);
+
+            int attempts = 0;
+            boolean sent = false;
+            while (attempts < 2 && !sent) {
+                attempts++;
+                try {
+                    mailSender.send(message);
+                    sent = true;
+                    log.info("=== HTML EMAIL SENT SUCCESSFULLY to: {} (attempt {}) ===", to, attempts);
+                } catch (Exception innerEx) {
+                    log.error("Attempt {} to send HTML email failed: {}", attempts, innerEx.getMessage());
+                    if (attempts >= 2) {
+                        throw innerEx;
+                    }
+                    try { Thread.sleep(500); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
+                }
+            }
+        } catch (Exception e) {
+            log.error("=== HTML EMAIL SEND FAILED ===");
+            log.error("To: {}", to);
+            log.error("Subject: {}", subject);
+            log.error("Error message: {}", e.getMessage());
+            log.error("Error type: {}", e.getClass().getName());
+            log.error("Full stack trace:", e);
+            throw new RuntimeException("Failed to send HTML email to " + to + ": " + e.getMessage(), e);
         }
     }
 }
