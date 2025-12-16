@@ -135,6 +135,56 @@ public class AuthController {
         }
     }
 
+    /**
+     * User-only forgot password endpoint (checks User repository only)
+     */
+    @PostMapping("/forgot-password/user")
+    public ResponseEntity<String> forgotPasswordForUser(@RequestBody ForgotPasswordDto dto) {
+        String email = (dto != null) ? dto.getEmail() : null;
+        String mobile = (dto != null) ? dto.getMobile() : null;
+
+        try {
+            final String normEmail = ContactUtils.normalizeEmail(email);
+            final String normMobile = ContactUtils.normalizeMobile(mobile);
+
+            boolean sent = false;
+
+            if (normEmail != null) {
+                var userOpt = userRepository.findByEmail(normEmail);
+                if (userOpt.isPresent()) {
+                    otpService.generateAndSendOtp(normEmail);
+                    sent = true;
+                    log.info("OTP sent to User email (user-only endpoint): {}", normEmail);
+                }
+            }
+
+            if (!sent && normMobile != null) {
+                var userOpt = userRepository.findByMobile(normMobile);
+                if (userOpt.isPresent()) {
+                    otpService.generateAndSendOtp(normMobile);
+                    sent = true;
+                    log.info("OTP sent to User mobile (user-only endpoint): {}", normMobile);
+                } else {
+                    var candidates = ContactUtils.mobileSearchCandidates(normMobile);
+                    if (!candidates.isEmpty()) {
+                        var userCandidateOpt = userRepository.findByMobileIn(candidates);
+                        if (userCandidateOpt.isPresent()) {
+                            otpService.generateAndSendOtp(normMobile);
+                            sent = true;
+                            log.info("OTP sent to User mobile (via candidates) (user-only): {}", normMobile);
+                        }
+                    }
+                }
+            }
+
+            // Always return generic message
+            return ResponseEntity.ok("If a user account exists for the provided contact, an OTP has been sent to reset the password.");
+        } catch (Exception e) {
+            log.error("Error in forgotPasswordForUser for email={} mobile={}", email, mobile, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Unable to process request");
+        }
+    }
+
     @PostMapping("/forgot-username")
     public ResponseEntity<String> forgotUsername(@RequestBody ForgotUsernameDto dto) {
         String email = (dto != null) ? dto.getEmail() : null;
@@ -229,6 +279,62 @@ public class AuthController {
             return ResponseEntity.ok("If an account exists for the provided contact, your username has been sent via email or WhatsApp.");
         } catch (Exception e) {
             log.error("Error in forgotUsername for email={} mobile={}", email, mobile, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Unable to process request");
+        }
+    }
+
+    /**
+     * User-only forgot username endpoint (checks User repository only)
+     */
+    @PostMapping("/forgot-username/user")
+    public ResponseEntity<String> forgotUsernameForUser(@RequestBody ForgotUsernameDto dto) {
+        String email = (dto != null) ? dto.getEmail() : null;
+        String mobile = (dto != null) ? dto.getMobile() : null;
+
+        try {
+            log.info("User-only forgot username request received for email={}, mobile={}", email, mobile);
+
+            if ((email == null || email.isBlank()) && (mobile == null || mobile.isBlank())) {
+                log.warn("Forgot username (user-only) request with no email or mobile");
+                return ResponseEntity.badRequest().body("Email or mobile number is required");
+            }
+
+            final String normEmail = ContactUtils.normalizeEmail(email);
+            final String normMobile = ContactUtils.normalizeMobile(mobile);
+
+            boolean sent = false;
+
+            if (normEmail != null) {
+                var userOpt = userRepository.findByEmail(normEmail);
+                if (userOpt.isPresent()) {
+                    authService.sendUsernameToUser(normEmail);
+                    sent = true;
+                    log.info("User username sent to email (user-only): {}", normEmail);
+                }
+            }
+
+            if (!sent && normMobile != null) {
+                var userOpt = userRepository.findByMobile(normMobile);
+                if (userOpt.isPresent()) {
+                    authService.sendUsernameToUser(normMobile);
+                    sent = true;
+                    log.info("User username sent to mobile (user-only): {}", normMobile);
+                } else {
+                    var candidates = ContactUtils.mobileSearchCandidates(normMobile);
+                    if (!candidates.isEmpty()) {
+                        var userCandidateOpt = userRepository.findByMobileIn(candidates);
+                        if (userCandidateOpt.isPresent()) {
+                            authService.sendUsernameToUser(normMobile);
+                            sent = true;
+                            log.info("User username sent to mobile (via candidates) (user-only): {}", normMobile);
+                        }
+                    }
+                }
+            }
+
+            return ResponseEntity.ok("If a user account exists for the provided contact, your username has been sent via email or WhatsApp.");
+        } catch (Exception e) {
+            log.error("Error in forgotUsernameForUser for email={} mobile={}", email, mobile, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Unable to process request");
         }
     }

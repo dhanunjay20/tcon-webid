@@ -1,110 +1,36 @@
 package com.tcon.webid.exception;
 
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.validation.FieldError;
-import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
-import org.springframework.web.bind.annotation.RestControllerAdvice;
 
-import java.time.LocalDateTime;
-import java.util.HashMap;
+import java.time.Instant;
 import java.util.Map;
 
-@Slf4j
-@RestControllerAdvice
+@ControllerAdvice
 public class GlobalExceptionHandler {
 
-    private static final HttpHeaders JSON_HEADERS = new HttpHeaders();
-    static {
-        JSON_HEADERS.setContentType(MediaType.APPLICATION_JSON);
-    }
-
-    @ExceptionHandler(BusinessException.class)
-    public ResponseEntity<ErrorResponse> handleBusinessException(BusinessException ex) {
-        log.error("Business exception: {} - {}", ex.getErrorCode(), ex.getMessage());
-        ErrorResponse error = new ErrorResponse(
-                ex.getErrorCode(),
-                ex.getMessage(),
-                LocalDateTime.now(),
-                null
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleNotFound(ResourceNotFoundException ex) {
+        Map<String, Object> body = Map.of(
+                "timestamp", Instant.now().toString(),
+                "status", HttpStatus.NOT_FOUND.value(),
+                "error", "Not Found",
+                "message", ex.getMessage()
         );
-        return ResponseEntity.status(ex.getHttpStatus()).headers(JSON_HEADERS).body(error);
-    }
-
-    @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<ErrorResponse> handleValidationExceptions(MethodArgumentNotValidException ex) {
-        Map<String, String> errors = new HashMap<>();
-        ex.getBindingResult().getAllErrors().forEach((error) -> {
-            String fieldName = ((FieldError) error).getField();
-            String errorMessage = error.getDefaultMessage();
-            errors.put(fieldName, errorMessage);
-        });
-        log.error("Validation error: {}", errors);
-        ErrorResponse error = new ErrorResponse(
-                "VALIDATION_ERROR",
-                "Invalid request parameters",
-                LocalDateTime.now(),
-                errors
-        );
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).headers(JSON_HEADERS).body(error);
-    }
-
-    @ExceptionHandler({IllegalArgumentException.class})
-    public ResponseEntity<ErrorResponse> handleIllegalArgument(IllegalArgumentException ex) {
-        log.warn("Illegal argument: {}", ex.getMessage());
-        ErrorResponse error = new ErrorResponse(
-                "BAD_REQUEST",
-                ex.getMessage(),
-                LocalDateTime.now(),
-                null
-        );
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).headers(JSON_HEADERS).body(error);
-    }
-
-    @ExceptionHandler({IllegalStateException.class})
-    public ResponseEntity<ErrorResponse> handleIllegalState(IllegalStateException ex) {
-        log.warn("Illegal state: {}", ex.getMessage());
-        ErrorResponse error = new ErrorResponse(
-                "INVALID_STATE",
-                ex.getMessage(),
-                LocalDateTime.now(),
-                null
-        );
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).headers(JSON_HEADERS).body(error);
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body);
     }
 
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<ErrorResponse> handleGlobalException(Exception ex) {
-        log.error("Unexpected error", ex);
-        ErrorResponse error = new ErrorResponse(
-                "INTERNAL_ERROR",
-                "An unexpected error occurred. Please try again later.",
-                LocalDateTime.now(),
-                null
+    public ResponseEntity<Map<String, Object>> handleGeneric(Exception ex) {
+        Map<String, Object> body = Map.of(
+                "timestamp", Instant.now().toString(),
+                "status", HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                "error", "Internal Server Error",
+                "message", ex.getMessage()
         );
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).headers(JSON_HEADERS).body(error);
-    }
-
-    public static class ErrorResponse {
-        private String errorCode;
-        private String message;
-        private LocalDateTime timestamp;
-        private Map<String, String> errors;
-
-        public ErrorResponse(String errorCode, String message, LocalDateTime timestamp, Map<String, String> errors) {
-            this.errorCode = errorCode;
-            this.message = message;
-            this.timestamp = timestamp;
-            this.errors = errors;
-        }
-
-        public String getErrorCode() { return errorCode; }
-        public String getMessage() { return message; }
-        public LocalDateTime getTimestamp() { return timestamp; }
-        public Map<String, String> getErrors() { return errors; }
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body);
     }
 }
+

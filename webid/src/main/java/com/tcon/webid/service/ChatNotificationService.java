@@ -10,6 +10,7 @@ import com.tcon.webid.repository.ChatNotificationMetadataRepository;
 import com.tcon.webid.repository.UserRepository;
 import com.tcon.webid.repository.VendorRepository;
 import com.tcon.webid.dto.TypingStatus;
+import com.tcon.webid.util.MessageEncryptionUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -39,6 +40,12 @@ public class ChatNotificationService {
     @Autowired
     private SimpMessagingTemplate messagingTemplate;
 
+    @Autowired
+    private MessageEncryptionUtil encryptionUtil;
+
+    @Autowired
+    private ChatKeyProvider chatKeyProvider;
+
     /**
      * Update or create chat notification metadata when a message is sent
      *
@@ -46,11 +53,27 @@ public class ChatNotificationService {
      */
     public void updateChatNotification(ChatMessage message) {
         try {
+            // Decrypt last message content for metadata display if needed
+            String lastMessagePlain = message.getContent();
+            if (message.getEncrypted() != null && message.getEncrypted() && lastMessagePlain != null) {
+                try {
+                    String key = chatKeyProvider.getKeyForChat(message.getChatId()).orElse(chatKeyProvider.getMasterKey().orElse(null));
+                    if (key != null) {
+                        lastMessagePlain = encryptionUtil.decrypt(message.getContent(), key);
+                    } else {
+                        lastMessagePlain = "[encrypted]";
+                    }
+                } catch (Exception e) {
+                    log.warn("Failed to decrypt message for metadata id={} chatId={}", message.getId(), message.getChatId());
+                    lastMessagePlain = "[encrypted]";
+                }
+            }
+
             // Update metadata for both sender and recipient
             updateMetadataForParticipant(
                     message.getSenderId(),
                     message.getRecipientId(),
-                    message.getContent(),
+                    lastMessagePlain,
                     message.getTimestamp(),
                     false // sender doesn't get unread count increase
             );
@@ -58,7 +81,7 @@ public class ChatNotificationService {
             updateMetadataForParticipant(
                     message.getRecipientId(),
                     message.getSenderId(),
-                    message.getContent(),
+                    lastMessagePlain,
                     message.getTimestamp(),
                     true // recipient gets unread count increase
             );

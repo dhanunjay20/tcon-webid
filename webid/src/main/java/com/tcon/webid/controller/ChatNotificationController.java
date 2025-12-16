@@ -10,6 +10,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import jakarta.servlet.http.HttpServletRequest;
 
 /**
  * REST controller for chat notifications and metadata
@@ -31,9 +32,13 @@ public class ChatNotificationController {
      * @return List of chat items
      */
     @GetMapping("/{userId}/chats")
-    public ResponseEntity<List<ChatListItemDto>> getChatList(@PathVariable String userId) {
+    public ResponseEntity<List<ChatListItemDto>> getChatList(@PathVariable String userId, HttpServletRequest request) {
         try {
-            log.info("Fetching chat list for user: {}", userId);
+            // Log remote caller details to help identify polling clients
+            String remote = request != null ? request.getRemoteAddr() : "unknown";
+            String ua = request != null ? request.getHeader("User-Agent") : "unknown";
+            log.info("Fetching chat list for user: {} from {} UA={}", userId, remote, ua);
+
             List<ChatListItemDto> chatList = chatNotificationService.getChatList(userId);
             return ResponseEntity.ok(chatList);
         } catch (Exception e) {
@@ -146,4 +151,3 @@ public class ChatNotificationController {
         }
     }
 }
-

@@ -33,4 +33,9 @@ public class Vendor {
     private String website;
     private Integer yearsInBusiness;
     private String aboutBusiness;
+
+    // Live location fields
+    private Double latitude;
+    private Double longitude;
+    private String lastLocationUpdatedAt;
 }

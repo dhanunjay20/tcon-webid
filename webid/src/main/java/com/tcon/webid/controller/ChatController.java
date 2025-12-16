@@ -1,12 +1,15 @@
 package com.tcon.webid.controller;
 
 import com.tcon.webid.dto.ChatNotification;
+import com.tcon.webid.dto.ChatUpdateNotification;
 import com.tcon.webid.dto.TypingStatus;
 import com.tcon.webid.dto.UserStatus;
 import com.tcon.webid.entity.ChatMessage;
+import com.tcon.webid.service.ChatKeyProvider;
 import com.tcon.webid.service.ChatService;
 import com.tcon.webid.service.ChatNotificationService;
 import com.tcon.webid.repository.VendorRepository;
+import com.tcon.webid.util.MessageEncryptionUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.messaging.handler.annotation.MessageMapping;
@@ -32,30 +35,65 @@ public class ChatController {
     @Autowired
     private VendorRepository vendorRepository;
 
+    @Autowired
+    private MessageEncryptionUtil encryptionUtil;
+
+    @Autowired
+    private ChatKeyProvider chatKeyProvider;
+
     @MessageMapping("/chat")
     public void processMessage(@Payload ChatMessage chatMessage) {
         try {
-            log.info("Processing message from {} to {}",
-                    chatMessage.getSenderId(), chatMessage.getRecipientId());
+            log.info("Processing message from {} to {} (encrypted: {})",
+                    chatMessage.getSenderId(), chatMessage.getRecipientId(),
+                    chatMessage.getEncrypted() != null && chatMessage.getEncrypted());
 
-            // Save message to database
+            // Save message to database (encryption handled in service)
             ChatMessage savedMessage = chatService.save(chatMessage);
 
             // Update chat notification metadata (unread counts, last message, etc.)
             chatNotificationService.updateChatNotification(savedMessage);
 
-            // Send the FULL saved message to recipient (real-time delivery)
+            // Build outgoing notification with decrypted content
+            String outgoingContent;
+            if (savedMessage.getEncrypted() != null && savedMessage.getEncrypted()) {
+                String key = chatKeyProvider.getKeyForChat(savedMessage.getChatId()).orElse(chatKeyProvider.getMasterKey().orElse(null));
+                try {
+                    if (key != null) {
+                        outgoingContent = encryptionUtil.decrypt(savedMessage.getContent(), key);
+                    } else {
+                        outgoingContent = "[encrypted]";
+                    }
+                } catch (Exception e) {
+                    log.warn("Failed to decrypt message id={} for websocket send", savedMessage.getId());
+                    outgoingContent = "[encrypted]";
+                }
+            } else {
+                outgoingContent = savedMessage.getContent();
+            }
+
+            ChatUpdateNotification outgoing = ChatUpdateNotification.builder()
+                    .messageId(savedMessage.getId())
+                    .chatId(savedMessage.getChatId())
+                    .senderId(savedMessage.getSenderId())
+                    .recipientId(savedMessage.getRecipientId())
+                    .content(outgoingContent)
+                    .eventType("MESSAGE_SENT")
+                    .messageStatus(savedMessage.getStatus().toString())
+                    .build();
+
+            // Send decrypted message to recipient
             messagingTemplate.convertAndSendToUser(
                     savedMessage.getRecipientId(),
                     "/queue/messages",
-                    savedMessage
+                    outgoing
             );
 
-            // Send the FULL saved message back to sender (confirmation + real-time update)
+            // Send decrypted message back to sender as confirmation
             messagingTemplate.convertAndSendToUser(
                     savedMessage.getSenderId(),
                     "/queue/messages",
-                    savedMessage
+                    outgoing
             );
 
             // Send chat list update notification to recipient

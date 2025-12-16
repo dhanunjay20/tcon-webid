@@ -3,6 +3,7 @@ package com.tcon.webid.service;
 import com.tcon.webid.dto.UserRegistrationDto;
 import com.tcon.webid.dto.UserUpdateDto;
 import com.tcon.webid.entity.User;
+import com.tcon.webid.exception.ResourceNotFoundException;
 import com.tcon.webid.repository.UserRepository;
 import com.tcon.webid.util.ContactUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -43,7 +44,7 @@ public class UserServiceImpl implements UserService {
     @Override
     public User getUserById(String id) {
         return userRepo.findById(id)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
     }
 
     @Override
@@ -54,7 +55,7 @@ public class UserServiceImpl implements UserService {
     @Override
     public User updateUser(String id, UserUpdateDto dto) {
         User user = userRepo.findById(id)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         // Update fields if provided (allow full overwrite when present)
         if (dto.getFirstName() != null) user.setFirstName(dto.getFirstName());
         if (dto.getLastName() != null) user.setLastName(dto.getLastName());
@@ -85,7 +86,7 @@ public class UserServiceImpl implements UserService {
     @Override
     public void deleteUser(String id) {
         if (!userRepo.existsById(id))
-            throw new RuntimeException("User not found");
+            throw new ResourceNotFoundException("User not found");
         userRepo.deleteById(id);
     }
 }

@@ -14,5 +14,8 @@ public class Address {
     private String state;
     private String country;
     private String zipCode;
-}
 
+    // Geographic coordinates for the address
+    private Double latitude;
+    private Double longitude;
+}

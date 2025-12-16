@@ -2,6 +2,7 @@ package com.tcon.webid.service;
 
 import com.tcon.webid.dto.*;
 import com.tcon.webid.entity.Vendor;
+import com.tcon.webid.exception.ResourceNotFoundException;
 import com.tcon.webid.repository.VendorRepository;
 import com.tcon.webid.util.ContactUtils;
 import com.tcon.webid.util.JwtUtil;
@@ -113,7 +114,7 @@ public class VendorServiceImpl implements VendorService {
     public VendorResponseDto getVendorById(String id) {
         return vendorRepo.findById(id)
                 .map(this::toResponseDto)
-                .orElseThrow(() -> new RuntimeException("Vendor not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Vendor not found"));
     }
 
     @Override
@@ -126,7 +127,7 @@ public class VendorServiceImpl implements VendorService {
     @Override
     public VendorResponseDto updateVendor(String id, VendorUpdateDto dto) {
         Vendor vendor = vendorRepo.findById(id)
-                .orElseThrow(() -> new RuntimeException("Vendor not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Vendor not found"));
 
         // Update fields if provided
         if (dto.getBusinessName() != null) vendor.setBusinessName(dto.getBusinessName());
@@ -162,7 +163,12 @@ public class VendorServiceImpl implements VendorService {
     public VendorResponseDto getVendorByOrganizationId(String organizationId) {
         return vendorRepo.findByVendorOrganizationId(organizationId)
                 .map(this::toResponseDto)
-                .orElseThrow(() -> new RuntimeException("Vendor not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Vendor not found"));
+    }
+
+    @Override
+    public VendorResponseDto mapVendorToDto(Vendor v) {
+        return toResponseDto(v);
     }
 
     private VendorResponseDto toResponseDto(Vendor v) {
@@ -179,7 +185,11 @@ public class VendorServiceImpl implements VendorService {
                 v.getLastSeenAt(),
                 v.getWebsite(),
                 v.getYearsInBusiness(),
-                v.getAboutBusiness()
+                v.getAboutBusiness(),
+                v.getLatitude(),
+                v.getLongitude(),
+                v.getLastLocationUpdatedAt(),
+                null // distance is calculated dynamically by LocationService when needed
         );
     }
 }

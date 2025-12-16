@@ -24,5 +24,9 @@ public class User {
     private String passwordHash;
     private List<Address> addresses;
     private String profileUrl; // URL for user profile image/page
-}
 
+    // Live location fields (latitude/longitude) and last update timestamp
+    private Double latitude;
+    private Double longitude;
+    private String lastLocationUpdatedAt;
+}

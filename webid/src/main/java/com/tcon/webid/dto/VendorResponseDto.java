@@ -26,5 +26,12 @@ public class VendorResponseDto {
     private String website;
     private Integer yearsInBusiness;
     private String aboutBusiness;
-}
 
+    // Live location fields
+    private Double latitude;
+    private Double longitude;
+    private String lastLocationUpdatedAt;
+
+    // Distance field (calculated for radius search, in km or miles)
+    private Double distance;
+}

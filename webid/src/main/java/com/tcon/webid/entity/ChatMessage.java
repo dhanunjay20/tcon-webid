@@ -38,9 +38,14 @@ public class ChatMessage {
     private String recipientId;
 
     /**
-     * Message content
+     * Message content (may be encrypted)
      */
     private String content;
+
+    /**
+     * Indicates if the message content is encrypted
+     */
+    private Boolean encrypted;
 
     /**
      * Timestamp in ISO 8601 format

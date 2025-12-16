@@ -13,6 +13,8 @@ import org.springframework.web.socket.messaging.SessionConnectEvent;
 import org.springframework.web.socket.messaging.SessionDisconnectEvent;
 
 import java.security.Principal;
+import java.util.Collections;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -54,7 +56,17 @@ public class WebSocketEventListener {
                     String token = authHeader.substring(7);
                     Claims claims = jwtUtil.validateToken(token);
                     if (claims != null) {
-                        userId = claims.getSubject();
+                        final String subject = claims.getSubject();
+                        userId = subject;
+                        // Create and set a Principal so Spring can map this session to the user
+                        Principal created = new Principal() {
+                            private final String name = subject;
+                            @Override
+                            public String getName() {
+                                return name;
+                            }
+                        };
+                        accessor.setUser(created);
                     }
                 }
             }
@@ -91,5 +103,9 @@ public class WebSocketEventListener {
         } catch (Exception e) {
             log.error("Error handling WebSocket disconnect event: {}", e.getMessage(), e);
         }
+    }
+
+    public Map<String, String> getSessionUserMap() {
+        return Collections.unmodifiableMap(sessionUserMap);
     }
 }

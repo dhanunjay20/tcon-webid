@@ -4,6 +4,7 @@ import com.tcon.webid.dto.ChatUpdateNotification;
 import com.tcon.webid.entity.ChatMessage;
 import com.tcon.webid.entity.ChatMessage.MessageStatus;
 import com.tcon.webid.repository.ChatMessageRepository;
+import com.tcon.webid.util.MessageEncryptionUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -25,6 +26,12 @@ public class ChatService {
     @Autowired
     private RealTimeNotificationService realTimeNotificationService;
 
+    @Autowired
+    private MessageEncryptionUtil encryptionUtil;
+
+    @Autowired
+    private ChatKeyProvider chatKeyProvider;
+
     /**
      * Save a chat message with initial status SENT
      *
@@ -42,9 +49,60 @@ public class ChatService {
             // Set timestamp
             chatMessage.setTimestamp(Instant.now().toString());
 
+            // Encrypt content if not already encrypted and content is present
+            try {
+                if (chatMessage.getContent() != null && !chatMessage.getContent().isBlank()) {
+                    Boolean alreadyEncrypted = chatMessage.getEncrypted();
+                    if (alreadyEncrypted == null || !alreadyEncrypted) {
+                        // Resolve key: per-chat -> master
+                        String chatId = chatMessage.getChatId();
+                        String key = chatKeyProvider.getKeyForChat(chatId).orElse(null);
+                        if (key == null) {
+                            key = chatKeyProvider.getMasterKey().orElse(null);
+                        }
+
+                        if (key != null) {
+                            String encrypted = encryptionUtil.encrypt(chatMessage.getContent(), key);
+                            chatMessage.setContent(encrypted);
+                            chatMessage.setEncrypted(true);
+                            log.debug("Encrypted chat message content for chatId={}", chatId);
+                        } else {
+                            // No key configured - persist plaintext but mark as not encrypted
+                            chatMessage.setEncrypted(false);
+                            log.warn("No encryption key found for chat {}, storing plaintext", chatMessage.getChatId());
+                        }
+                    }
+                } else {
+                    // Empty content - ensure not marked encrypted
+                    chatMessage.setEncrypted(false);
+                }
+            } catch (Exception e) {
+                // Encryption should not block saving - log and continue with plaintext
+                log.error("Encryption failed for message from {} to {}: {}", chatMessage.getSenderId(), chatMessage.getRecipientId(), e.getMessage(), e);
+                chatMessage.setEncrypted(false);
+            }
+
             ChatMessage savedMessage = chatMessageRepository.save(chatMessage);
             log.info("Saved chat message with id: {} from: {} to: {}",
                     savedMessage.getId(), savedMessage.getSenderId(), savedMessage.getRecipientId());
+
+            // Build notification content: attempt to decrypt for sending over websocket
+            String outgoingContent;
+            if (savedMessage.getEncrypted() != null && savedMessage.getEncrypted()) {
+                String key = chatKeyProvider.getKeyForChat(savedMessage.getChatId()).orElse(chatKeyProvider.getMasterKey().orElse(null));
+                try {
+                    if (key != null) {
+                        outgoingContent = encryptionUtil.decrypt(savedMessage.getContent(), key);
+                    } else {
+                        outgoingContent = "[encrypted]";
+                    }
+                } catch (Exception e) {
+                    log.warn("Failed to decrypt stored message for outgoing notification id={} chatId={}", savedMessage.getId(), savedMessage.getChatId());
+                    outgoingContent = "[encrypted]";
+                }
+            } else {
+                outgoingContent = savedMessage.getContent();
+            }
 
             // Send real-time notification for new message
             ChatUpdateNotification chatUpdate = ChatUpdateNotification.builder()
@@ -52,7 +110,7 @@ public class ChatService {
                     .chatId(savedMessage.getChatId())
                     .senderId(savedMessage.getSenderId())
                     .recipientId(savedMessage.getRecipientId())
-                    .content(savedMessage.getContent())
+                    .content(outgoingContent)
                     .eventType("MESSAGE_SENT")
                     .messageStatus(savedMessage.getStatus().toString())
                     .build();
@@ -81,6 +139,25 @@ public class ChatService {
             String chatId = getChatId(senderId, recipientId);
             List<ChatMessage> messages = chatMessageRepository.findByChatIdOrderByTimestampAsc(chatId);
             log.info("Retrieved {} messages for chat: {}", messages.size(), chatId);
+
+            // Decrypt messages for outgoing responses without mutating persisted data
+            for (ChatMessage msg : messages) {
+                try {
+                    if (msg.getEncrypted() != null && msg.getEncrypted() && msg.getContent() != null) {
+                        String key = chatKeyProvider.getKeyForChat(chatId).orElse(chatKeyProvider.getMasterKey().orElse(null));
+                        if (key != null) {
+                            String decrypted = encryptionUtil.decrypt(msg.getContent(), key);
+                            msg.setContent(decrypted);
+                        } else {
+                            msg.setContent("[encrypted]");
+                        }
+                    }
+                } catch (Exception e) {
+                    log.warn("Failed to decrypt message id={} for chat {}: {}", msg.getId(), chatId, e.getMessage());
+                    msg.setContent("[encrypted]");
+                }
+            }
+
             return messages;
         } catch (Exception e) {
             log.error("Error finding chat messages: {}", e.getMessage(), e);
@@ -195,4 +272,3 @@ public class ChatService {
         }
     }
 }
-

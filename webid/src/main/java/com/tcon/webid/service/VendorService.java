@@ -1,6 +1,7 @@
 package com.tcon.webid.service;
 
 import com.tcon.webid.dto.*;
+import com.tcon.webid.entity.Vendor;
 import java.util.List;
 
 public interface VendorService {
@@ -9,6 +10,6 @@ public interface VendorService {
     VendorResponseDto getVendorById(String id);
     List<VendorResponseDto> getAllVendors();
     VendorResponseDto updateVendor(String id, VendorUpdateDto dto);
-    // add delete as needed for full CRUD
     VendorResponseDto getVendorByOrganizationId(String vendorOrganizationId);
+    VendorResponseDto mapVendorToDto(Vendor vendor);
 }
