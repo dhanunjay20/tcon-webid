@@ -29,4 +29,7 @@ public class User {
     private Double latitude;
     private Double longitude;
     private String lastLocationUpdatedAt;
+
+    // Stripe customer ID for payment processing
+    private String stripeCustomerId;
 }
