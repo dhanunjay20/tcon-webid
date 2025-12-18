@@ -11,11 +11,13 @@ import com.tcon.webid.dto.*;
 import com.tcon.webid.entity.Order;
 import com.tcon.webid.entity.Payment;
 import com.tcon.webid.entity.User;
+import com.tcon.webid.entity.WebhookEvent;
 import com.tcon.webid.exception.PaymentException;
 import com.tcon.webid.exception.ResourceNotFoundException;
 import com.tcon.webid.repository.OrderRepository;
 import com.tcon.webid.repository.PaymentRepository;
 import com.tcon.webid.repository.UserRepository;
+import com.tcon.webid.repository.WebhookEventRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -35,11 +37,12 @@ public class PaymentServiceImpl implements PaymentService {
     private final PaymentRepository paymentRepository;
     private final OrderRepository orderRepository;
     private final UserRepository userRepository;
+    private final WebhookEventRepository webhookEventRepository;
     private final StripeConfig stripeConfig;
 
     @Override
     @Transactional
-    public PaymentIntentResponseDto createPaymentIntent(PaymentIntentRequestDto request, String customerId) {
+    public PaymentIntentResponseDto createPaymentIntent(PaymentIntentRequestDto request, String customerId, String idempotencyKey) {
         try {
             log.info("Creating payment intent for order: {} and customer: {}", request.getOrderId(), customerId);
 
@@ -67,6 +70,11 @@ public class PaymentServiceImpl implements PaymentService {
             // Convert amount to cents (Stripe uses smallest currency unit)
             long amountInCents = (long) (request.getAmount() * 100);
 
+            // Validate amount
+            if (amountInCents <= 0) {
+                throw new PaymentException("Invalid amount: must be greater than 0", "INVALID_AMOUNT");
+            }
+
             // Create metadata
             Map<String, String> metadata = new HashMap<>();
             metadata.put("orderId", request.getOrderId());
@@ -91,8 +99,21 @@ public class PaymentServiceImpl implements PaymentService {
                 paramsBuilder.setSetupFutureUsage(PaymentIntentCreateParams.SetupFutureUsage.OFF_SESSION);
             }
 
+            // Generate idempotency key if not provided
+            String effectiveIdempotencyKey = idempotencyKey;
+            if (effectiveIdempotencyKey == null || effectiveIdempotencyKey.trim().isEmpty()) {
+                // Generate deterministic idempotency key from order ID and customer ID
+                effectiveIdempotencyKey = "pi_" + request.getOrderId() + "_" + customerId;
+                log.debug("Generated idempotency key: {}", effectiveIdempotencyKey);
+            }
+
+            // Create request options with idempotency key
+            com.stripe.net.RequestOptions requestOptions = com.stripe.net.RequestOptions.builder()
+                    .setIdempotencyKey(effectiveIdempotencyKey)
+                    .build();
+
             // Create payment intent with Stripe
-            PaymentIntent paymentIntent = PaymentIntent.create(paramsBuilder.build());
+            PaymentIntent paymentIntent = PaymentIntent.create(paramsBuilder.build(), requestOptions);
 
             // Save payment record to database
             Payment payment = new Payment();
@@ -101,7 +122,8 @@ public class PaymentServiceImpl implements PaymentService {
             payment.setVendorOrganizationId(order.getVendorOrganizationId());
             payment.setStripePaymentIntentId(paymentIntent.getId());
             payment.setStripeCustomerId(stripeCustomerId);
-            payment.setAmount((double) amountInCents);
+            payment.setAmountInCents(amountInCents);
+            payment.setAmount((double) amountInCents); // Keep for backward compatibility
             payment.setCurrency(request.getCurrency().toUpperCase());
             payment.setStatus(paymentIntent.getStatus());
             payment.setDescription(request.getDescription());
@@ -110,7 +132,7 @@ public class PaymentServiceImpl implements PaymentService {
 
             paymentRepository.save(payment);
 
-            log.info("Payment intent created successfully: {}", paymentIntent.getId());
+            log.info("Payment intent created successfully: {} for order: {}", paymentIntent.getId(), request.getOrderId());
 
             return PaymentIntentResponseDto.builder()
                     .paymentIntentId(paymentIntent.getId())
@@ -125,11 +147,11 @@ public class PaymentServiceImpl implements PaymentService {
                     .build();
 
         } catch (StripeException e) {
-            log.error("Stripe error while creating payment intent: {}", e.getMessage(), e);
-            throw new PaymentException("Failed to create payment intent: " + e.getMessage(), "STRIPE_API_ERROR", e);
+            log.error("Stripe error while creating payment intent for order {}: {}", request.getOrderId(), e.getMessage());
+            throw new PaymentException("Failed to create payment intent", "STRIPE_API_ERROR", e);
         } catch (Exception e) {
-            log.error("Error creating payment intent: {}", e.getMessage(), e);
-            throw new PaymentException("Failed to create payment intent: " + e.getMessage(), e);
+            log.error("Error creating payment intent for order {}: {}", request.getOrderId(), e.getMessage());
+            throw new PaymentException("Failed to create payment intent", e);
         }
     }
 
@@ -289,14 +311,20 @@ public class PaymentServiceImpl implements PaymentService {
                 throw new PaymentException("Payment already refunded", "PAYMENT_ALREADY_REFUNDED");
             }
 
+            // Get payment amount in cents
+            Long paymentAmountInCents = payment.getAmountInCents() != null
+                    ? payment.getAmountInCents()
+                    : (payment.getAmount() != null ? payment.getAmount().longValue() : 0L);
+
             // Create refund parameters
             RefundCreateParams.Builder refundParamsBuilder = RefundCreateParams.builder()
                     .setPaymentIntent(payment.getStripePaymentIntentId());
 
             // Set amount for partial refund
+            Long refundAmountInCents = null;
             if (request.getAmount() != null) {
-                long refundAmountInCents = (long) (request.getAmount() * 100);
-                if (refundAmountInCents > payment.getAmount().longValue()) {
+                refundAmountInCents = (long) (request.getAmount() * 100);
+                if (refundAmountInCents > paymentAmountInCents) {
                     throw new PaymentException("Refund amount cannot exceed payment amount", "INVALID_REFUND_AMOUNT");
                 }
                 refundParamsBuilder.setAmount(refundAmountInCents);
@@ -304,7 +332,11 @@ public class PaymentServiceImpl implements PaymentService {
 
             // Set reason
             if (request.getReason() != null) {
-                refundParamsBuilder.setReason(RefundCreateParams.Reason.valueOf(request.getReason().toUpperCase()));
+                try {
+                    refundParamsBuilder.setReason(RefundCreateParams.Reason.valueOf(request.getReason().toUpperCase()));
+                } catch (IllegalArgumentException e) {
+                    log.warn("Invalid refund reason: {}, using default", request.getReason());
+                }
             }
 
             // Add metadata
@@ -317,9 +349,10 @@ public class PaymentServiceImpl implements PaymentService {
 
             // Update payment record
             payment.setRefundId(refund.getId());
-            payment.setRefundAmount((double) refund.getAmount());
+            payment.setRefundAmountInCents(refund.getAmount());
+            payment.setRefundAmount((double) refund.getAmount()); // Keep for backward compatibility
             payment.setRefundReason(request.getDescription());
-            payment.setStatus(refund.getAmount().equals(payment.getAmount().longValue()) ? "refunded" : "partially_refunded");
+            payment.setStatus(refund.getAmount().equals(paymentAmountInCents) ? "refunded" : "partially_refunded");
             payment.setUpdatedAt(Instant.now());
             paymentRepository.save(payment);
 
@@ -332,68 +365,146 @@ public class PaymentServiceImpl implements PaymentService {
                 orderRepository.save(order);
             }
 
-            log.info("Refund processed successfully for payment: {}", request.getPaymentId());
+            log.info("Refund processed successfully for payment: {} (amount: {} cents)",
+                    request.getPaymentId(), refund.getAmount());
 
             return toPaymentResponseDto(payment);
 
         } catch (StripeException e) {
-            log.error("Stripe error while processing refund: {}", e.getMessage(), e);
-            throw new PaymentException("Failed to process refund: " + e.getMessage(), "STRIPE_API_ERROR", e);
+            log.error("Stripe error while processing refund for payment {}: {}",
+                    request.getPaymentId(), e.getMessage());
+            throw new PaymentException("Failed to process refund", "STRIPE_API_ERROR", e);
         } catch (Exception e) {
-            log.error("Error processing refund: {}", e.getMessage(), e);
-            throw new PaymentException("Failed to process refund: " + e.getMessage(), e);
+            log.error("Error processing refund for payment {}: {}",
+                    request.getPaymentId(), e.getMessage());
+            throw new PaymentException("Failed to process refund", e);
         }
     }
 
     @Override
     @Transactional
     public void handleWebhookEvent(String payload, String signatureHeader) {
+        Event event = null;
+
         try {
-            log.info("Processing webhook event");
-
-            Event event;
-
-            // Verify webhook signature if secret is configured
-            if (stripeConfig.getWebhookSecret() != null && !stripeConfig.getWebhookSecret().isEmpty()) {
-                try {
-                    event = Webhook.constructEvent(payload, signatureHeader, stripeConfig.getWebhookSecret());
-                } catch (SignatureVerificationException e) {
-                    log.error("Webhook signature verification failed: {}", e.getMessage());
-                    throw new PaymentException("Invalid webhook signature", "INVALID_SIGNATURE", e);
-                }
-            } else {
-                // Parse event without verification (not recommended for production)
-                // WARNING: This should only be used for testing
-                log.warn("Webhook processed without signature verification - NOT SECURE FOR PRODUCTION");
-                return; // Skip webhook processing if signature cannot be verified
+            // Validate signature header is present
+            if (signatureHeader == null || signatureHeader.trim().isEmpty()) {
+                log.error("Webhook signature header missing");
+                throw new PaymentException("Missing Stripe signature header", "MISSING_SIGNATURE");
             }
 
-            log.info("Webhook event type: {}", event.getType());
+            // Verify webhook signature
+            String webhookSecret = stripeConfig.getWebhookSecret();
+
+            if (webhookSecret == null || webhookSecret.trim().isEmpty()) {
+                // In production, this should never happen (enforced by StripeConfig)
+                // In development, we can be lenient
+                if (stripeConfig.isProduction()) {
+                    log.error("CRITICAL: Webhook secret not configured in production!");
+                    throw new PaymentException("Webhook secret not configured", "CONFIGURATION_ERROR");
+                } else {
+                    log.warn("Webhook signature verification SKIPPED - development mode");
+                    log.warn("This is NOT SECURE and should only be used for local testing");
+                    log.warn("Webhook processing skipped - configure webhook secret to enable");
+                    // Skip processing in development without webhook secret
+                    return;
+                }
+            }
+
+            // PRODUCTION PATH: Verify signature (webhook secret is present)
+            try {
+                event = Webhook.constructEvent(payload, signatureHeader, webhookSecret);
+                log.debug("Webhook signature verified successfully");
+            } catch (SignatureVerificationException e) {
+                log.error("Webhook signature verification failed: {}", e.getMessage());
+                throw new PaymentException("Invalid webhook signature", "INVALID_SIGNATURE", e);
+            }
+
+            if (event == null) {
+                log.error("Failed to parse webhook event");
+                throw new PaymentException("Failed to parse webhook event", "PARSE_ERROR");
+            }
+
+            String eventId = event.getId();
+            String eventType = event.getType();
+
+            log.info("Processing webhook event: {} (type: {})", eventId, eventType);
+
+            // IDEMPOTENCY CHECK: Ensure we haven't processed this event before
+            if (webhookEventRepository.existsByStripeEventId(eventId)) {
+                log.info("Webhook event {} already processed - skipping duplicate", eventId);
+                return;
+            }
+
+            // Record the event as being processed (idempotency)
+            try {
+                WebhookEvent webhookEvent = WebhookEvent.builder()
+                        .stripeEventId(eventId)
+                        .eventType(eventType)
+                        .status("processing")
+                        .processedAt(Instant.now())
+                        .eventCreatedAt(Instant.ofEpochSecond(event.getCreated()))
+                        .build();
+                webhookEventRepository.save(webhookEvent);
+                log.debug("Webhook event {} recorded for processing", eventId);
+            } catch (Exception e) {
+                // Handle race condition - another instance might have inserted this event
+                if (webhookEventRepository.existsByStripeEventId(eventId)) {
+                    log.info("Webhook event {} already being processed by another instance - skipping", eventId);
+                    return;
+                }
+                throw e;
+            }
 
             // Handle different event types
-            switch (event.getType()) {
-                case "payment_intent.succeeded":
-                    handlePaymentIntentSucceeded(event);
-                    break;
-                case "payment_intent.payment_failed":
-                    handlePaymentIntentFailed(event);
-                    break;
-                case "payment_intent.canceled":
-                    handlePaymentIntentCanceled(event);
-                    break;
-                case "charge.refunded":
-                    handleChargeRefunded(event);
-                    break;
-                case "charge.dispute.created":
-                    handleDisputeCreated(event);
-                    break;
-                default:
-                    log.info("Unhandled event type: {}", event.getType());
+            try {
+                switch (eventType) {
+                    case "payment_intent.succeeded":
+                        handlePaymentIntentSucceeded(event);
+                        break;
+                    case "payment_intent.payment_failed":
+                        handlePaymentIntentFailed(event);
+                        break;
+                    case "payment_intent.canceled":
+                        handlePaymentIntentCanceled(event);
+                        break;
+                    case "charge.refunded":
+                        handleChargeRefunded(event);
+                        break;
+                    case "charge.dispute.created":
+                        handleDisputeCreated(event);
+                        break;
+                    default:
+                        log.info("Unhandled webhook event type: {}", eventType);
+                }
+
+                // Mark event as successfully processed
+                webhookEventRepository.findByStripeEventId(eventId).ifPresent(we -> {
+                    we.setStatus("processed");
+                    webhookEventRepository.save(we);
+                });
+
+                log.info("Webhook event {} processed successfully", eventId);
+
+            } catch (Exception e) {
+                log.error("Error handling webhook event {}: {}", eventId, e.getMessage(), e);
+
+                // Mark event as failed
+                webhookEventRepository.findByStripeEventId(eventId).ifPresent(we -> {
+                    we.setStatus("failed");
+                    we.setErrorMessage(e.getMessage());
+                    webhookEventRepository.save(we);
+                });
+
+                throw new PaymentException("Failed to process webhook event", "WEBHOOK_PROCESSING_ERROR", e);
             }
 
+        } catch (PaymentException e) {
+            // Re-throw payment exceptions as-is
+            throw e;
         } catch (Exception e) {
-            log.error("Error processing webhook event: {}", e.getMessage(), e);
-            throw new PaymentException("Failed to process webhook event: " + e.getMessage(), e);
+            log.error("Unexpected error processing webhook: {}", e.getMessage(), e);
+            throw new PaymentException("Failed to process webhook event", "WEBHOOK_ERROR", e);
         }
     }
 
@@ -476,14 +587,17 @@ public class PaymentServiceImpl implements PaymentService {
     private void handleChargeRefunded(Event event) {
         Charge charge = (Charge) event.getDataObjectDeserializer().getObject().orElse(null);
         if (charge != null && charge.getPaymentIntent() != null) {
-            log.info("Charge refunded: {}", charge.getId());
+            log.info("Charge refunded: {} for payment intent: {}", charge.getId(), charge.getPaymentIntent());
 
             paymentRepository.findByStripePaymentIntentId(charge.getPaymentIntent())
                     .ifPresent(payment -> {
                         payment.setStatus(charge.getRefunded() ? "refunded" : "partially_refunded");
-                        payment.setRefundAmount((double) charge.getAmountRefunded());
+                        payment.setRefundAmountInCents(charge.getAmountRefunded());
+                        payment.setRefundAmount((double) charge.getAmountRefunded()); // Backward compatibility
                         payment.setUpdatedAt(Instant.now());
                         paymentRepository.save(payment);
+                        log.info("Payment status updated to {} for payment intent: {}",
+                                payment.getStatus(), charge.getPaymentIntent());
                     });
         }
     }
@@ -504,13 +618,22 @@ public class PaymentServiceImpl implements PaymentService {
     }
 
     private PaymentResponseDto toPaymentResponseDto(Payment payment) {
+        // Calculate amount in dollars from cents
+        Double amountInDollars = null;
+        if (payment.getAmountInCents() != null) {
+            amountInDollars = payment.getAmountInCents() / 100.0;
+        } else if (payment.getAmount() != null) {
+            // Fallback for old records - amount was already stored in cents as Double
+            amountInDollars = payment.getAmount() / 100.0;
+        }
+
         return PaymentResponseDto.builder()
                 .id(payment.getId())
                 .orderId(payment.getOrderId())
                 .customerId(payment.getCustomerId())
                 .vendorOrganizationId(payment.getVendorOrganizationId())
                 .stripePaymentIntentId(payment.getStripePaymentIntentId())
-                .amount(payment.getAmount() != null ? payment.getAmount() / 100.0 : null)
+                .amount(amountInDollars)
                 .currency(payment.getCurrency())
                 .status(payment.getStatus())
                 .paymentMethod(payment.getPaymentMethod())

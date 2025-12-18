@@ -15,7 +15,8 @@ public class PaymentIntentRequestDto {
 
     @NotBlank(message = "Order ID is required")
     private String orderId;
-
+    // PaymentIntentRequestDto.java
+    private String customerId; // optional: MongoDB user id
     @NotNull(message = "Amount is required")
     @Positive(message = "Amount must be positive")
     private Double amount; // in dollars

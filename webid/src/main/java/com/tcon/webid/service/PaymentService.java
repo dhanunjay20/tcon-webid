@@ -9,8 +9,12 @@ public interface PaymentService {
 
     /**
      * Create a payment intent for an order
+     * @param request Payment intent request details
+     * @param customerId Customer ID
+     * @param idempotencyKey Optional idempotency key for safe retries (can be null)
+     * @return Payment intent response with client secret
      */
-    PaymentIntentResponseDto createPaymentIntent(PaymentIntentRequestDto request, String customerId);
+    PaymentIntentResponseDto createPaymentIntent(PaymentIntentRequestDto request, String customerId, String idempotencyKey);
 
     /**
      * Confirm a payment after successful payment on client side

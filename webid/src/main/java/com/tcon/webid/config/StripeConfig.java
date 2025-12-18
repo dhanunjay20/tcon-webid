@@ -10,7 +10,8 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class StripeConfig {
 
-    @Value("${stripe.api.key}")
+    // Allow empty default so app can start without keys configured
+    @Value("${stripe.api.key:}")
     private String stripeApiKey;
 
     @Value("${stripe.webhook.secret:}")
@@ -21,18 +22,31 @@ public class StripeConfig {
 
     @PostConstruct
     public void init() {
-        Stripe.apiKey = stripeApiKey;
-        log.info("Stripe API initialized successfully");
-
-        if (webhookSecret != null && !webhookSecret.isEmpty()) {
-            log.info("Stripe webhook secret configured");
+        // Validate API key is present when required
+        if (stripeApiKey == null || stripeApiKey.trim().isEmpty() || stripeApiKey.contains("your_test_secret_key")) {
+            log.warn("Stripe API key not configured. Set 'stripe.api.key' in application.properties for Stripe integration.");
         } else {
-            log.warn("Stripe webhook secret not configured. Webhook signature verification will be skipped.");
+            // Initialize Stripe SDK with API key
+            Stripe.apiKey = stripeApiKey;
+            log.info("Stripe API initialized");
         }
 
-        if (publishableKey != null && !publishableKey.isEmpty()) {
-            log.info("Stripe publishable key is configured");
+        // Log webhook secret status
+        if (webhookSecret == null || webhookSecret.trim().isEmpty()) {
+            log.warn("Stripe webhook secret not configured - webhook signature verification will be SKIPPED");
+            log.warn("This is acceptable for development but NOT SECURE for production");
+        } else {
+            log.info("Stripe webhook signature verification: ENABLED");
         }
+
+        // Log publishable key status
+        if (publishableKey != null && !publishableKey.isEmpty() && !publishableKey.contains("your_test_publishable_key")) {
+            log.info("Stripe publishable key is configured");
+        } else {
+            log.warn("Stripe publishable key is not configured - required for client-side integration");
+        }
+
+        log.info("Stripe configuration complete");
     }
 
     public String getWebhookSecret() {
@@ -41,5 +55,9 @@ public class StripeConfig {
 
     public String getPublishableKey() {
         return publishableKey;
+    }
+
+    public boolean isProduction() {
+        return false; // Simplified - no profile logic
     }
 }

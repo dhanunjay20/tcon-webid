@@ -1,7 +1,10 @@
 package com.tcon.webid.controller;
 
 import com.tcon.webid.dto.*;
+import com.tcon.webid.entity.User;
+import com.tcon.webid.repository.UserRepository;
 import com.tcon.webid.service.PaymentService;
+import com.tcon.webid.exception.ResourceNotFoundException;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,38 +21,64 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/payments")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 public class PaymentController {
 
     private final PaymentService paymentService;
+    private final UserRepository userRepository; // used to resolve email -> mongodb id when needed
 
     /**
      * Create a payment intent
      * POST /api/payments/create-intent
+     * Accepts optional Idempotency-Key header for safe retries
      */
     @PostMapping("/create-intent")
     public ResponseEntity<PaymentIntentResponseDto> createPaymentIntent(
             @Valid @RequestBody PaymentIntentRequestDto request,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             Authentication authentication) {
         try {
-            // Get customer ID from authentication (assuming userId is stored in principal)
-            String customerId = authentication != null ? authentication.getName() : request.getCustomerEmail();
+            // Priority: explicit customerId -> authenticated principal -> customerEmail
+            String customerId = null;
+            String principalValue = (authentication != null && authentication.getName() != null)
+                    ? authentication.getName() : null;
 
-            PaymentIntentResponseDto response = paymentService.createPaymentIntent(request, customerId);
+            if (request.getCustomerId() != null && !request.getCustomerId().isBlank()) {
+                customerId = request.getCustomerId();
+                log.debug("Using customerId from request: {}", customerId);
+            } else if (principalValue != null && !principalValue.isBlank()) {
+                if (principalValue.contains("@")) {
+                    String normEmail = principalValue.trim().toLowerCase();
+                    User user = userRepository.findByEmail(normEmail)
+                            .orElseThrow(() -> new ResourceNotFoundException("User not found with email: " + normEmail));
+                    customerId = user.getId();
+                } else {
+                    customerId = principalValue;
+                }
+                log.debug("Resolved customer from principal: {} -> {}", principalValue, customerId);
+            } else if (request.getCustomerEmail() != null && !request.getCustomerEmail().isBlank()) {
+                String normEmail = request.getCustomerEmail().trim().toLowerCase();
+                User user = userRepository.findByEmail(normEmail)
+                        .orElseThrow(() -> new ResourceNotFoundException("User not found with email: " + normEmail));
+                customerId = user.getId();
+                log.debug("Resolved customer from request.email: {} -> {}", request.getCustomerEmail(), customerId);
+            } else {
+                throw new ResourceNotFoundException("Customer information is required to create a payment intent");
+            }
+
+            PaymentIntentResponseDto response = paymentService.createPaymentIntent(request, customerId, idempotencyKey);
             return ResponseEntity.ok(response);
+        } catch (ResourceNotFoundException rnfe) {
+            log.warn("Create payment intent failed (not found): order={}, cause={}", request.getOrderId(), rnfe.getMessage());
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(PaymentIntentResponseDto.builder().message(rnfe.getMessage()).build());
         } catch (Exception e) {
-            log.error("Error creating payment intent: {}", e.getMessage());
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+            log.error("Error creating payment intent for order {}: ", request.getOrderId(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(PaymentIntentResponseDto.builder()
                             .message("Failed to create payment intent: " + e.getMessage())
                             .build());
         }
     }
-
-    /**
-     * Confirm a payment after client-side payment succeeds
-     * POST /api/payments/confirm/{paymentIntentId}
-     */
     @PostMapping("/confirm/{paymentIntentId}")
     public ResponseEntity<PaymentResponseDto> confirmPayment(@PathVariable String paymentIntentId) {
         try {
@@ -169,23 +198,35 @@ public class PaymentController {
     /**
      * Stripe webhook endpoint
      * POST /api/payments/webhook
+     * Receives and processes Stripe webhook events
      */
     @PostMapping("/webhook")
     public ResponseEntity<Map<String, String>> handleWebhook(
             @RequestBody String payload,
-            @RequestHeader("Stripe-Signature") String signatureHeader) {
+            @RequestHeader(value = "Stripe-Signature", required = false) String signatureHeader) {
+
+        Map<String, String> response = new HashMap<>();
+
         try {
-            log.info("Received webhook event");
+            log.info("Received Stripe webhook event");
+
+            // Validate signature header is present
+            if (signatureHeader == null || signatureHeader.trim().isEmpty()) {
+                log.warn("Webhook request missing Stripe-Signature header");
+                response.put("status", "error");
+                response.put("message", "Missing Stripe-Signature header");
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+            }
+
             paymentService.handleWebhookEvent(payload, signatureHeader);
 
-            Map<String, String> response = new HashMap<>();
             response.put("status", "success");
             return ResponseEntity.ok(response);
+
         } catch (Exception e) {
-            log.error("Error processing webhook: {}", e.getMessage());
-            Map<String, String> response = new HashMap<>();
+            log.error("Error processing webhook event: {}", e.getMessage());
             response.put("status", "error");
-            response.put("message", e.getMessage());
+            response.put("message", "Webhook processing failed");
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
         }
     }

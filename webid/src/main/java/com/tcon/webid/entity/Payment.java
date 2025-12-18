@@ -32,6 +32,18 @@ public class Payment {
 
     private String stripeChargeId;
 
+    /**
+     * Amount in cents (smallest currency unit)
+     * This is the primary field for storing payment amounts
+     * For backwards compatibility, 'amount' field is kept but deprecated
+     */
+    private Long amountInCents;
+
+    /**
+     * @deprecated Use amountInCents instead
+     * Kept for backwards compatibility
+     */
+    @Deprecated
     private Double amount;
 
     private String currency;
@@ -54,6 +66,15 @@ public class Payment {
 
     private String refundId;
 
+    /**
+     * Refund amount in cents (smallest currency unit)
+     */
+    private Long refundAmountInCents;
+
+    /**
+     * @deprecated Use refundAmountInCents instead
+     */
+    @Deprecated
     private Double refundAmount;
 
     private String refundReason;
